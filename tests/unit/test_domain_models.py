@@ -3,7 +3,13 @@ from datetime import UTC, datetime, timedelta, timezone
 import pytest
 from pydantic import ValidationError
 
-from seo_orchestrator.canonical import canonical_json
+from seo_orchestrator.canonical import (
+    MAX_CANONICAL_BYTES,
+    MAX_CANONICAL_DEPTH,
+    MAX_CANONICAL_NODES,
+    MAX_SAFE_INTEGER,
+    canonical_json,
+)
 from seo_orchestrator.domain import (
     AudienceSegment,
     BusinessDirection,
@@ -643,6 +649,27 @@ def test_url_hosts_normalize_idna_ipv4_and_ipv6() -> None:
     )
 
 
+def test_url_hosts_use_uts46_idna2008_authorities() -> None:
+    values = brief_values() | {
+        "competitor_urls": ["https://faß.de/path", "https://οδός.gr/path"]
+    }
+
+    brief = SeoBrief(**values)  # type: ignore[arg-type]
+
+    assert brief.competitor_urls == (
+        "https://xn--fa-hia.de/path",
+        "https://xn--pxavk3b.gr/path",
+    )
+
+
+@pytest.mark.parametrize("hostname", [f"{chr(0xD800)}.example", f"{chr(0xDC00)}.example"])
+def test_invalid_idna_hosts_raise_controlled_validation_errors(hostname: str) -> None:
+    values = brief_values() | {"competitor_urls": [f"https://{hostname}/"]}
+
+    with pytest.raises(ValidationError, match="hostname is invalid"):
+        SeoBrief(**values)  # type: ignore[arg-type]
+
+
 @pytest.mark.parametrize(
     "url",
     [
@@ -750,6 +777,69 @@ def test_compiled_context_rejects_tuples_anywhere(context: object) -> None:
 
     with pytest.raises(ValidationError):
         ExecutionSnapshot(**values)  # type: ignore[arg-type]
+
+
+def _nested_context(container_depth: int) -> list[object]:
+    root: list[object] = []
+    current = root
+    for _ in range(container_depth):
+        child: list[object] = []
+        current.append(child)
+        current = child
+    return root
+
+
+def _invalid_compiled_contexts() -> list[object]:
+    cyclic_list: list[object] = []
+    cyclic_list.append(cyclic_list)
+    cyclic_dict: dict[str, object] = {}
+    cyclic_dict["self"] = cyclic_dict
+    return [
+        "\ud800",
+        "\udc00",
+        {"\ud800": "value"},
+        cyclic_list,
+        cyclic_dict,
+        _nested_context(MAX_CANONICAL_DEPTH + 1),
+        [None] * MAX_CANONICAL_NODES,
+        "a" * (MAX_CANONICAL_BYTES + 1),
+        MAX_SAFE_INTEGER + 1,
+        -MAX_SAFE_INTEGER - 1,
+    ]
+
+
+@pytest.mark.parametrize(
+    "context",
+    _invalid_compiled_contexts(),
+    ids=[
+        "high-surrogate",
+        "low-surrogate",
+        "surrogate-key",
+        "list-cycle",
+        "dict-cycle",
+        "depth",
+        "nodes",
+        "bytes",
+        "positive-integer",
+        "negative-integer",
+    ],
+)
+def test_compiled_context_converts_all_canonical_failures_to_validation_errors(
+    context: object,
+) -> None:
+    values = snapshot_values() | {"compiled_context": context}
+
+    with pytest.raises(ValidationError, match="compiled_context"):
+        ExecutionSnapshot(**values)  # type: ignore[arg-type]
+
+
+def test_compiled_context_allows_repeated_acyclic_aliases() -> None:
+    alias: list[object] = [{"value": 1}]
+    snapshot = ExecutionSnapshot(
+        **(snapshot_values() | {"compiled_context": [alias, alias]})  # type: ignore[arg-type]
+    )
+
+    assert snapshot.thawed_compiled_context() == [[{"value": 1}], [{"value": 1}]]
 
 
 @pytest.mark.parametrize("snapshot_hash", ["A" * 64, "a" * 63, "g" * 64])

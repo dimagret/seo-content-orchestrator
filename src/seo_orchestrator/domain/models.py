@@ -10,6 +10,7 @@ from types import MappingProxyType
 from typing import Annotated, Any, cast
 from urllib.parse import SplitResult, urlsplit, urlunsplit
 
+import idna
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -102,8 +103,10 @@ def _normalize_url(value: object) -> str:
         if ":" in hostname or ("." in hostname and set(hostname) <= set("0123456789.")):
             raise ValueError("URL contains a malformed IP literal") from None
         try:
-            ascii_host = hostname.encode("idna").decode("ascii").lower()
-        except UnicodeError as exc:
+            ascii_host = idna.encode(
+                hostname, uts46=True, std3_rules=True
+            ).decode("ascii").lower()
+        except (idna.IDNAError, UnicodeError) as exc:
             raise ValueError("URL hostname is invalid") from exc
         if len(ascii_host) > 253:
             raise ValueError("URL hostname exceeds 253 characters")

@@ -62,6 +62,29 @@ class ExternalStatus(StrEnum):
     CANCELED = "CANCELED"
 ```
 
+Canonical JSON is resource-bounded and fail-closed. It permits integers only in the
+cross-language JSON-safe range `-(2**53 - 1)` through `+(2**53 - 1)`; `bool` remains a
+separately accepted scalar. The maximum container depth is 64, where a container root is
+depth 0 and a nested container at depth 64 is accepted while depth 65 is rejected. The
+maximum recursively visited node count is 10,000: account once for the root, every list
+item, every dictionary value, and every dictionary key (containers count when visited as
+values). Active list/dictionary cycles are rejected by identity, while repeated acyclic
+aliases are allowed and serialize as duplicate JSON values. Every string value and key
+must be UTF-8 encodable. Before serialization, cumulatively account at most 1,048,576 raw
+UTF-8 bytes across all string values and keys; after compact sorted JSON serialization,
+the final payload must also be at most 1,048,576 UTF-8 bytes so quoting, escaping, and JSON
+syntax overhead are included. Depth is checked before descending and node/string budgets
+are checked incrementally. Every guard failure and residual serialization/encoding
+`ValueError`, `TypeError`, `UnicodeEncodeError`, `RecursionError`, or `OverflowError` is
+reported as `CanonicalizationError`; never catch or convert `MemoryError` or `SystemExit`.
+
+DNS URL authorities use the direct runtime dependency `idna>=3.10,<4` and normalize with
+`idna.encode(hostname, uts46=True, std3_rules=True).decode("ascii").lower()`. IP address
+normalization and all other URL rules remain unchanged. This authority contract must match
+downstream HTTPX, including `faß.de` → `xn--fa-hia.de` and `οδός.gr` →
+`xn--pxavk3b.gr`; invalid IDNA is a controlled Pydantic validation error and performs no
+DNS or network access.
+
 Domain version keys:
 
 ```text
@@ -431,6 +454,8 @@ git commit -m "chore: scaffold isolated SEO orchestrator"
 ### Task 2: Canonical Domain Models and Fingerprints
 
 **Files:**
+- Modify: `pyproject.toml`
+- Modify: `uv.lock`
 - Create: `src/seo_orchestrator/canonical.py`
 - Create: `src/seo_orchestrator/errors.py`
 - Create: `src/seo_orchestrator/domain/models.py`
@@ -442,9 +467,16 @@ git commit -m "chore: scaffold isolated SEO orchestrator"
 - Produces: `sha256_fingerprint(value: JsonValue) -> str`
 - Produces: Pydantic models `CompanyProfile`, `BusinessDirection`, `AudienceSegment`, `SeoBrief`, `ExecutionSnapshot`
 
-- [ ] **Step 1: Write canonicalization failure tests**
+- [ ] **Step 1: Write canonicalization and IDNA failure/boundary tests**
 
-Tests must prove sorted Unicode keys, stable list order, UTC timestamps, and fail-closed rejection of floats, bytes, sets, arbitrary objects, and non-string dict keys.
+Tests must prove sorted Unicode keys, stable list order, UTC timestamps, and fail-closed
+rejection of floats, bytes, sets, arbitrary objects, and non-string dict keys. Add focused
+tests for lone high/low surrogates in values and keys; direct/nested list and dictionary
+cycles; depth 64 accepted and 65 rejected; the exact 10,000-node boundary with keys counted;
+the 1,048,576-byte final boundary including JSON quoting overhead plus oversized single and
+cumulative strings; JSON-safe integer boundaries and `bool`; controlled failures through
+`sha256_fingerprint` and `ExecutionSnapshot.compiled_context`; and deterministic repeated
+acyclic aliases. Add URL authority cases for `faß.de`, `οδός.gr`, and invalid IDNA input.
 
 ```python
 def test_fingerprint_is_key_order_independent():
@@ -465,9 +497,16 @@ uv run pytest tests/unit/test_canonical.py -v
 
 Expected: import failure.
 
-- [ ] **Step 3: Implement canonical JSON**
+- [ ] **Step 3: Implement bounded canonical JSON and UTS46 authorities**
 
-Use `json.dumps(..., ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)` after a recursive allowlist validator accepting only `None`, `bool`, `int`, `str`, lists, and string-key dictionaries. Normalize timestamps to explicit UTC strings before canonicalization.
+Use `json.dumps(..., ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)`
+after a deterministic recursive allowlist validator accepting only `None`, `bool`, JSON-safe
+integers, UTF-8 strings, lists, and string-key dictionaries. Enforce the Frozen Shared
+Contracts depth, active-cycle, node, preflight string-byte, final payload-byte, integer, and
+controlled-error rules without descending beyond the maximum depth. Normalize timestamps to
+explicit UTC strings before canonicalization. Add direct runtime dependency `idna>=3.10,<4`,
+refresh `uv.lock` reproducibly, and use UTS46 with STD3 rules for DNS names while preserving
+the existing IP path and every other URL rule; normalization performs no DNS or network access.
 
 - [ ] **Step 4: Write exact domain validation tests**
 
