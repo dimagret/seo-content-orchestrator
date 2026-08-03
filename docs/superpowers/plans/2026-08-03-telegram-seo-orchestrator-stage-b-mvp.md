@@ -402,6 +402,8 @@ class Settings:
 
 Production must accept `unix:/run/seo-orchestrator/worker.sock` and reject TCP.
 
+SEO_WORKER_SOCKET_MODE must be parsed as a base-8 string and then security-validated; parsing does not imply acceptance. Accept only values in 0000..0777 with owner read/write, no execute bits, and no world permissions (for example 0600, 0640, and 0660); reject negative, special-bit, executable, or world-accessible modes (for example -1, 1660, 0666, and 0777). Production uses 0660.
+
 - [ ] **Step 5: Run quality gates**
 
 ```bash
