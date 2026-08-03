@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta, timezone
 import pytest
 from pydantic import ValidationError
 
+from seo_orchestrator.canonical import canonical_json
 from seo_orchestrator.domain import (
     AudienceSegment,
     BusinessDirection,
@@ -544,20 +545,33 @@ def test_compiled_context_is_deeply_immutable_and_can_be_thawed() -> None:
         "sections": ["hero", {"proof": True}],
         "count": 2,
     }
-    assert snapshot.model_dump(mode="json")["compiled_context"] == snapshot.thawed_compiled_context()
+    dumped_context = snapshot.model_dump(mode="json")["compiled_context"]
+    thawed_context = snapshot.thawed_compiled_context()
+    assert dumped_context == thawed_context
+    expected_canonical = b'{"count":2,"sections":["hero",{"proof":true}]}'
+    assert canonical_json(dumped_context) == expected_canonical
+    assert canonical_json(thawed_context) == expected_canonical
     with pytest.raises(TypeError):
         snapshot.compiled_context["count"] = 3  # type: ignore[index]
     with pytest.raises(TypeError):
         snapshot.compiled_context["sections"][1]["proof"] = False  # type: ignore[index]
 
 
-def test_compiled_context_tuples_are_recursively_frozen() -> None:
-    context = {"items": ({"mutable": "before"},)}
-    snapshot = ExecutionSnapshot(**(snapshot_values() | {"compiled_context": context}))  # type: ignore[arg-type]
+@pytest.mark.parametrize(
+    "context",
+    [
+        ("top-level",),
+        [("nested-in-list",)],
+        {"nested": ("nested-in-dict",)},
+        {"nested": [{"deeply_nested": (1, 2)}]},
+    ],
+    ids=["top-level", "list", "dict", "deeply-nested"],
+)
+def test_compiled_context_rejects_tuples_anywhere(context: object) -> None:
+    values = snapshot_values() | {"compiled_context": context}
 
-    with pytest.raises(TypeError):
-        snapshot.compiled_context["items"][0]["mutable"] = "after"  # type: ignore[index]
-    assert snapshot.thawed_compiled_context() == {"items": [{"mutable": "before"}]}
+    with pytest.raises(ValidationError):
+        ExecutionSnapshot(**values)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize("snapshot_hash", ["A" * 64, "a" * 63, "g" * 64])

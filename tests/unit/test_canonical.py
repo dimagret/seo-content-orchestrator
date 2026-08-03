@@ -19,15 +19,32 @@ def test_canonical_json_is_compact_unicode_and_key_order_independent() -> None:
     )
 
 
-def test_array_order_is_stable_and_tuples_become_arrays() -> None:
-    assert canonical_json({"items": ("second", "first")}) == (
-        b'{"items":["second","first"]}'
-    )
+def test_array_order_is_stable() -> None:
     assert canonical_json([2, 1]) != canonical_json([1, 2])
 
 
-def test_public_json_value_alias_includes_recursive_tuples() -> None:
-    assert "tuple[JsonValue, ...]" in str(JsonValue.__value__)
+def test_public_json_value_alias_excludes_tuples() -> None:
+    assert "tuple" not in str(JsonValue.__value__)
+
+
+def test_top_level_tuple_is_rejected() -> None:
+    with pytest.raises(CanonicalizationError):
+        canonical_json((1, 2))  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "value",
+    [[("nested",)], {"nested": (1, 2)}],
+    ids=["list", "dict"],
+)
+def test_nested_tuple_is_rejected(value: object) -> None:
+    with pytest.raises(CanonicalizationError):
+        canonical_json(value)  # type: ignore[arg-type]
+
+
+def test_sha256_fingerprint_rejects_tuples() -> None:
+    with pytest.raises(CanonicalizationError):
+        sha256_fingerprint({"nested": (1, 2)})  # type: ignore[dict-item]
 
 
 class ExampleModel(BaseModel):
@@ -86,8 +103,8 @@ def test_nested_unsupported_values_and_non_string_keys_are_rejected(
 )
 @pytest.mark.parametrize(
     "container",
-    [lambda value: [value], lambda value: (value,), lambda value: {"nested": value}],
-    ids=["list", "tuple", "dict"],
+    [lambda value: [value], lambda value: {"nested": value}],
+    ids=["list", "dict"],
 )
 def test_every_unsupported_type_is_rejected_in_every_nested_container(
     unsupported: object, container: object
@@ -99,8 +116,8 @@ def test_every_unsupported_type_is_rejected_in_every_nested_container(
 
 @pytest.mark.parametrize(
     "value",
-    [{1: "value"}, [{1: "value"}], ({1: "value"},), {"nested": {1: "value"}}],
-    ids=["top-level-dict", "list", "tuple", "dict"],
+    [{1: "value"}, [{1: "value"}], {"nested": {1: "value"}}],
+    ids=["top-level-dict", "list", "dict"],
 )
 def test_non_string_keys_are_rejected_at_top_level_and_nested(value: object) -> None:
     with pytest.raises(CanonicalizationError):

@@ -123,7 +123,7 @@ def _normalize_url(value: str) -> str:
 def _freeze_json(value: JsonValue) -> object:
     if isinstance(value, dict):
         return MappingProxyType({key: _freeze_json(item) for key, item in value.items()})
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list):
         return tuple(_freeze_json(item) for item in value)
     return value
 

@@ -9,9 +9,7 @@ from typing import cast
 from seo_orchestrator.errors import CanonicalizationError
 
 type JsonScalar = None | bool | int | str
-type JsonValue = (
-    JsonScalar | list[JsonValue] | tuple[JsonValue, ...] | dict[str, JsonValue]
-)
+type JsonValue = JsonScalar | list[JsonValue] | dict[str, JsonValue]
 
 
 def _normalize(value: object) -> JsonValue:
@@ -19,7 +17,7 @@ def _normalize(value: object) -> JsonValue:
         return cast(JsonScalar, value)
     if isinstance(value, int):
         return value
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list):
         return [_normalize(item) for item in value]
     if isinstance(value, dict):
         normalized: dict[str, JsonValue] = {}
