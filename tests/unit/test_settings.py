@@ -5,6 +5,17 @@ import pytest
 from seo_orchestrator.settings import Settings
 
 
+def make_settings(**overrides: object) -> Settings:
+    values: dict[str, object] = {
+        "environment": "development",
+        "db_path": Path("/var/lib/seo-orchestrator/seo.db"),
+        "artifact_root": Path("/var/lib/seo-orchestrator/artifacts"),
+        "listen": "unix:/run/seo-orchestrator/worker.sock",
+    }
+    values.update(overrides)
+    return Settings(**values)  # type: ignore[arg-type]
+
+
 def test_relative_db_path_is_rejected() -> None:
     with pytest.raises(ValueError, match="absolute"):
         Settings.from_env({"SEO_DB_PATH": "relative/seo.db"})
@@ -74,3 +85,52 @@ def test_socket_mode_is_parsed_as_octal() -> None:
 def test_invalid_socket_mode_is_rejected() -> None:
     with pytest.raises(ValueError, match="octal"):
         Settings.from_env({"SEO_WORKER_SOCKET_MODE": "invalid"})
+
+
+def test_direct_constructor_rejects_unknown_environment() -> None:
+    with pytest.raises(ValueError, match="environment"):
+        make_settings(environment="staging")
+
+
+@pytest.mark.parametrize("field", ["db_path", "artifact_root"])
+def test_direct_constructor_rejects_relative_paths(field: str) -> None:
+    with pytest.raises(ValueError, match="absolute"):
+        make_settings(**{field: Path("relative/path")})
+
+
+@pytest.mark.parametrize(
+    "listen",
+    ["", "tcp:127.0.0.1:8787", "127.0.0.1:8787", "unix:", "unix:worker.sock"],
+)
+def test_production_rejects_non_absolute_unix_listeners(listen: str) -> None:
+    with pytest.raises(ValueError, match="Unix socket"):
+        make_settings(environment="production", listen=listen)
+
+
+@pytest.mark.parametrize("value", [0, -1, True, False])
+def test_direct_constructor_rejects_invalid_job_limits(value: object) -> None:
+    with pytest.raises(ValueError, match="positive integer"):
+        make_settings(max_active_jobs_per_user=value)
+
+
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_environment_rejects_non_positive_job_limits(value: str) -> None:
+    with pytest.raises(ValueError, match="positive integer"):
+        Settings.from_env({"SEO_MAX_ACTIVE_JOBS_PER_USER": value})
+
+
+@pytest.mark.parametrize("mode", [0o600, 0o640, 0o660])
+def test_direct_constructor_accepts_safe_socket_modes(mode: int) -> None:
+    assert make_settings(worker_socket_mode=mode).worker_socket_mode == mode
+
+
+@pytest.mark.parametrize("mode", [-1, 0o1660, 0o666, 0o770, True, False])
+def test_direct_constructor_rejects_unsafe_socket_modes(mode: object) -> None:
+    with pytest.raises(ValueError, match="socket mode"):
+        make_settings(worker_socket_mode=mode)
+
+
+@pytest.mark.parametrize("mode", ["-1", "1660", "0666", "0770", "not-octal", "0890"])
+def test_environment_rejects_unsafe_or_malformed_socket_modes(mode: str) -> None:
+    with pytest.raises(ValueError, match="SOCKET_MODE"):
+        Settings.from_env({"SEO_WORKER_SOCKET_MODE": mode})
