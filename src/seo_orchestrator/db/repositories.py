@@ -19,7 +19,7 @@ from seo_orchestrator.domain import (
     ExecutionSnapshot,
     SeoBrief,
 )
-from seo_orchestrator.errors import NotFound
+from seo_orchestrator.errors import CompanyArchived, NotFound
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +73,24 @@ class CompanyRepository:
             (company_id, created_at.isoformat(), updated_at.isoformat()),
         )
 
+    def require_active(self, company_id: str) -> None:
+        row = self._conn.execute(
+            "SELECT status FROM companies WHERE company_id = ?", (company_id,)
+        ).fetchone()
+        if row is None:
+            raise NotFound
+        if row[0] == "archived":
+            raise CompanyArchived
+
+    def archive_company(self, company_id: str, archived_at: datetime) -> None:
+        self.require_active(company_id)
+        self._conn.execute(
+            """UPDATE companies
+               SET status = 'archived', updated_at = ?, archived_at = ?
+               WHERE company_id = ?""",
+            (archived_at.isoformat(), archived_at.isoformat(), company_id),
+        )
+
     def add_profile(self, profile: CompanyProfile) -> None:
         self._conn.execute(
             """INSERT INTO company_profile_versions(
@@ -95,6 +113,22 @@ class CompanyRepository:
                FROM company_profile_versions
                WHERE company_id = ? AND version = ?""",
             (company_id, version),
+        ).fetchone()
+        if row is None:
+            raise NotFound
+        values: dict[str, Any] = json.loads(row[0])
+        values["created_at"] = datetime.fromisoformat(values["created_at"])
+        values["updated_at"] = datetime.fromisoformat(values["updated_at"])
+        return CompanyProfile.model_validate(values)
+
+    def get_current_profile(self, company_id: str) -> CompanyProfile:
+        row = self._conn.execute(
+            """SELECT profile_json
+               FROM company_profile_versions
+               WHERE company_id = ?
+               ORDER BY version DESC
+               LIMIT 1""",
+            (company_id,),
         ).fetchone()
         if row is None:
             raise NotFound
@@ -128,6 +162,24 @@ class CompanyRepository:
                FROM business_direction_versions
                WHERE company_id = ? AND direction_id = ? AND version = ?""",
             (company_id, direction_id, version),
+        ).fetchone()
+        if row is None:
+            raise NotFound
+        values: dict[str, Any] = json.loads(row[0])
+        values["created_at"] = datetime.fromisoformat(values["created_at"])
+        values["updated_at"] = datetime.fromisoformat(values["updated_at"])
+        return BusinessDirection.model_validate(values)
+
+    def get_current_direction(
+        self, company_id: str, direction_id: str
+    ) -> BusinessDirection:
+        row = self._conn.execute(
+            """SELECT direction_json
+               FROM business_direction_versions
+               WHERE company_id = ? AND direction_id = ?
+               ORDER BY version DESC
+               LIMIT 1""",
+            (company_id, direction_id),
         ).fetchone()
         if row is None:
             raise NotFound

@@ -1,0 +1,66 @@
+{
+  "fixture_notice": "Invented non-secret test data; not a claim about any real entity.",
+  "company_id": "sweet-world",
+  "company_profile_id": "sweet-world-profile",
+  "profile": {
+    "name": "Sweet World Atelier",
+    "brand_summary": "Invented confectionery atelier used only for deterministic tests.",
+    "products_services_overview": "Invented celebration cake design and tasting consultations.",
+    "commercial_model": "Made-to-order products with scheduled collection.",
+    "pricing_overview": "Invented tiered estimates based on size and decoration scope.",
+    "service_geography": "Invented metropolitan delivery area.",
+    "value_propositions": ["Design scope documented before production"],
+    "proof_points": ["Invented tasting notes archive"],
+    "certifications": ["Invented food-handling course"],
+    "case_references": ["Invented garden-theme reception cake"],
+    "tools_and_process": ["Tasting consultation", "Decoration sketch review"],
+    "tone_of_voice": "Warm, precise, and celebratory.",
+    "positive_voice_examples": ["We confirm the decoration scope in writing."],
+    "negative_voice_examples": ["Every cake will be absolutely perfect."],
+    "reading_level": "General audience.",
+    "allowed_claims": ["Written design summary before production"],
+    "forbidden_claims": ["Guaranteed identical handmade decorations"],
+    "compliance_requirements": ["Mark all examples as invented"],
+    "default_language": "en",
+    "default_locale": "en-US"
+  },
+  "direction": {
+    "direction_id": "wedding-cakes",
+    "data": {
+      "name": "Wedding Cakes",
+      "offerings": ["Invented cake design consultation"],
+      "category_context": "Invented made-to-order wedding confectionery category.",
+      "prices_and_tariffs": "Invented estimate after serving-count and design review.",
+      "direction_value_propositions": ["Decoration scope reviewed before production"],
+      "direction_proof_points": ["Invented design sketch sample"],
+      "direction_cases": ["Invented two-tier botanical cake example"],
+      "internal_link_catalog": ["/invented-wedding-cakes"],
+      "default_page_structure": ["Design options", "Tasting", "Ordering timeline"],
+      "default_language": "en",
+      "default_locale": "en-US",
+      "allowed_claims": ["A written design summary is provided"],
+      "forbidden_claims": ["Exact color match guaranteed"]
+    },
+    "audience": {
+      "audience_segment_id": "newlyweds",
+      "data": {
+        "name": "Newlyweds",
+        "buyer_roles": ["Wedding couple"],
+        "industry": "Private celebrations",
+        "company_or_customer_size": "Household purchase",
+        "geography": "Invented metropolitan delivery area",
+        "jobs_to_be_done": ["Select a reception cake design"],
+        "pains_and_risks": ["Unclear ordering timeline"],
+        "objections": ["Design and serving-count uncertainty"],
+        "objection_responses": ["Review an invented written design summary"],
+        "selection_criteria": ["Clear tasting and approval process"],
+        "minimum_expectations": ["Documented collection or delivery time"],
+        "purchase_triggers": ["Wedding date confirmed"],
+        "budget_range": "Estimate after consultation",
+        "decision_cycle": "Several weeks",
+        "decision_participants": ["Wedding couple"],
+        "preferred_content_formats": ["Planning guide"]
+      }
+    }
+  }
+}
