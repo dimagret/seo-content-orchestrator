@@ -92,6 +92,38 @@ def test_direct_constructor_rejects_unknown_environment() -> None:
         make_settings(environment="staging")
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("environment", object()),
+        ("db_path", "/var/lib/seo-orchestrator/seo.db"),
+        ("artifact_root", object()),
+        ("listen", object()),
+        ("worker_socket_mode", "0660"),
+        ("max_active_jobs_per_user", "1"),
+    ],
+)
+def test_direct_constructor_rejects_wrong_field_types(field: str, value: object) -> None:
+    with pytest.raises(ValueError):
+        make_settings(**{field: value})
+
+
+@pytest.mark.parametrize(
+    "env",
+    [
+        {"SEO_ENV": []},
+        {"SEO_DB_PATH": object()},
+        {"SEO_ARTIFACT_ROOT": object()},
+        {"SEO_LISTEN": object()},
+        {"SEO_WORKER_SOCKET_MODE": object()},
+        {"SEO_MAX_ACTIVE_JOBS_PER_USER": object()},
+    ],
+)
+def test_from_env_rejects_wrong_mapping_value_types(env: dict[str, object]) -> None:
+    with pytest.raises(ValueError):
+        Settings.from_env(env)  # type: ignore[arg-type]
+
+
 @pytest.mark.parametrize("field", ["db_path", "artifact_root"])
 def test_direct_constructor_rejects_relative_paths(field: str) -> None:
     with pytest.raises(ValueError, match="absolute"):
@@ -105,6 +137,44 @@ def test_direct_constructor_rejects_relative_paths(field: str) -> None:
 def test_production_rejects_non_absolute_unix_listeners(listen: str) -> None:
     with pytest.raises(ValueError, match="Unix socket"):
         make_settings(environment="production", listen=listen)
+
+
+@pytest.mark.parametrize(
+    "listen",
+    [
+        "unix:/",
+        "unix:/run/seo/",
+        "unix:/run/seo/worker\0.sock",
+        "unix:run/seo/worker.sock",
+        "unix:/run/./seo/worker.sock",
+        "unix:/run/seo/../worker.sock",
+    ],
+)
+def test_direct_constructor_rejects_invalid_production_socket_targets(listen: str) -> None:
+    with pytest.raises(ValueError, match="Unix socket"):
+        make_settings(environment="production", listen=listen)
+
+
+@pytest.mark.parametrize(
+    "listen",
+    [
+        "unix:/",
+        "unix:/run/seo/",
+        "unix:/run/seo/worker\0.sock",
+        "unix:run/seo/worker.sock",
+        "unix:/run/./seo/worker.sock",
+        "unix:/run/seo/../worker.sock",
+    ],
+)
+def test_from_env_rejects_invalid_production_socket_targets(listen: str) -> None:
+    with pytest.raises(ValueError, match="Unix socket"):
+        Settings.from_env({"SEO_ENV": "production", "SEO_LISTEN": listen})
+
+
+def test_development_accepts_tcp_listener() -> None:
+    settings = Settings.from_env({"SEO_LISTEN": "127.0.0.1:8787"})
+
+    assert settings.listen == "127.0.0.1:8787"
 
 
 @pytest.mark.parametrize("value", [0, -1, True, False])

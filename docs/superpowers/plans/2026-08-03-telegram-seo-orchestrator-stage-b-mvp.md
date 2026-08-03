@@ -401,7 +401,9 @@ class Settings:
     def from_env(cls, env: Mapping[str, str]) -> "Settings": ...
 ```
 
-Production must accept `unix:/run/seo-orchestrator/worker.sock` and reject TCP.
+Every `Settings` construction path must reject invalid field types with `ValueError`: `environment` and `listen` are strings; `db_path` and `artifact_root` are `pathlib.Path` values; and the worker socket mode and active-job limit retain their integer type/range policies. `from_env` accepts string mapping values only and converts malformed path/integer values to controlled `ValueError` failures without coercing arbitrary objects to strings.
+
+Production must accept `unix:/run/seo-orchestrator/worker.sock` and reject TCP. Validate the production listener purely lexically, without filesystem access: it starts exactly with `unix:`, has a non-empty raw target, contains no NUL, is an absolute POSIX path other than `/`, does not end in `/`, and contains no `.` or `..` segment before normalization. Development and test may continue to use string TCP listeners.
 
 SEO_WORKER_SOCKET_MODE must be parsed as a base-8 string and then security-validated; parsing does not imply acceptance. Accept only values in 0000..0777 with owner read/write, no execute bits, and no world permissions (for example 0600, 0640, and 0660); reject negative, special-bit, executable, or world-accessible modes (for example -1, 1660, 0666, and 0777). Production uses 0660.
 
