@@ -31,6 +31,21 @@ class IntSubclass(int):
         raise AssertionError("int subclass conversion must not be invoked")
 
 
+class NameLookupTrapMeta(type):
+    def __getattribute__(cls, name: str) -> object:
+        if name == "__name__":
+            raise RuntimeError("class name lookup must not be invoked")
+        return super().__getattribute__(name)
+
+
+class MetaclassTrap(metaclass=NameLookupTrapMeta):
+    pass
+
+
+class MetaclassTrapStr(str, metaclass=NameLookupTrapMeta):
+    pass
+
+
 class StatefulList(list[object]):
     iterations = 0
 
@@ -81,6 +96,42 @@ def test_canonical_json_rejects_subclasses_of_accepted_runtime_types(
 def test_canonical_json_rejects_string_subclass_dictionary_keys() -> None:
     with pytest.raises(CanonicalizationError, match="keys"):
         canonical_json({StrSubclass("key"): "value"})  # type: ignore[dict-item]
+
+
+def test_canonical_json_rejects_metaclass_trap_at_top_level_without_class_lookup() -> None:
+    with pytest.raises(
+        CanonicalizationError, match="^unsupported canonical JSON value type$"
+    ):
+        canonical_json(MetaclassTrap())  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "value",
+    [[MetaclassTrap()], {"nested": MetaclassTrap()}],
+    ids=["list-value", "dict-value"],
+)
+def test_canonical_json_rejects_nested_metaclass_traps_without_class_lookup(
+    value: object,
+) -> None:
+    with pytest.raises(
+        CanonicalizationError, match="^unsupported canonical JSON value type$"
+    ):
+        canonical_json(value)  # type: ignore[arg-type]
+
+
+def test_canonical_json_rejects_metaclass_trap_dictionary_key_without_class_lookup() -> None:
+    with pytest.raises(
+        CanonicalizationError,
+        match="^canonical JSON object keys must be exact strings$",
+    ):
+        canonical_json({MetaclassTrapStr("key"): "value"})  # type: ignore[dict-item]
+
+
+def test_sha256_fingerprint_rejects_metaclass_trap_without_class_lookup() -> None:
+    with pytest.raises(
+        CanonicalizationError, match="^unsupported canonical JSON value type$"
+    ):
+        sha256_fingerprint(MetaclassTrap())  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(

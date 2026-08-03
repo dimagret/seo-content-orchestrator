@@ -760,6 +760,24 @@ class CompiledContextDictSubclass(dict[str, object]):
         raise RuntimeError("items must not escape validation")
 
 
+class CompiledContextNameLookupTrapMeta(type):
+    def __getattribute__(cls, name: str) -> object:
+        if name == "__name__":
+            raise RuntimeError("class name lookup must not escape validation")
+        return super().__getattribute__(name)
+
+
+class CompiledContextMetaclassTrap(metaclass=CompiledContextNameLookupTrapMeta):
+    pass
+
+
+def test_compiled_context_rejects_metaclass_trap_with_controlled_error() -> None:
+    values = snapshot_values() | {"compiled_context": CompiledContextMetaclassTrap()}
+
+    with pytest.raises(ValidationError, match="compiled_context"):
+        ExecutionSnapshot(**values)  # type: ignore[arg-type]
+
+
 @pytest.mark.parametrize(
     "context",
     [

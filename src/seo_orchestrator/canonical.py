@@ -65,9 +65,7 @@ def _normalize(value: object, *, depth: int, state: _ValidationState) -> JsonVal
             raise CanonicalizationError("canonical JSON integer is outside the safe range")
         return integer_value
     if value_type is not list and value_type is not dict:
-        raise CanonicalizationError(
-            f"unsupported canonical JSON value type: {type(value).__name__}"
-        )
+        raise CanonicalizationError("unsupported canonical JSON value type")
     if depth > MAX_CANONICAL_DEPTH:
         raise CanonicalizationError("canonical JSON exceeds maximum container depth")
 
@@ -86,7 +84,9 @@ def _normalize(value: object, *, depth: int, state: _ValidationState) -> JsonVal
         normalized_dict: dict[str, JsonValue] = {}
         for key, item in cast(dict[object, object], value).items():
             if type(key) is not str:
-                raise CanonicalizationError("canonical JSON object keys must be strings")
+                raise CanonicalizationError(
+                    "canonical JSON object keys must be exact strings"
+                )
             string_key = key
             state.visit_string(string_key)
             normalized_dict[string_key] = _normalize(
