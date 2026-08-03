@@ -149,6 +149,73 @@ def build(model_type: type[object], values: dict[str, object]) -> object:
     return model_type(**values)  # type: ignore[call-arg]
 
 
+MODEL_VERSION_FIELDS = [
+    (CompanyProfile, company_values, "company_profile_version"),
+    (BusinessDirection, direction_values, "company_profile_version"),
+    (BusinessDirection, direction_values, "direction_version"),
+    (AudienceSegment, audience_values, "direction_version"),
+    (AudienceSegment, audience_values, "audience_version"),
+    (SeoBrief, brief_values, "company_profile_version"),
+    (SeoBrief, brief_values, "direction_version"),
+    (SeoBrief, brief_values, "audience_version"),
+    (ExecutionSnapshot, snapshot_values, "company_profile_version"),
+    (ExecutionSnapshot, snapshot_values, "direction_version"),
+    (ExecutionSnapshot, snapshot_values, "audience_version"),
+    (ExecutionSnapshot, snapshot_values, "prompt_set_version"),
+]
+
+
+MODEL_COLLECTION_FIELDS = [
+    *[
+        (CompanyProfile, company_values, field)
+        for field in (
+            "value_propositions",
+            "proof_points",
+            "certifications",
+            "case_references",
+            "tools_and_process",
+            "positive_voice_examples",
+            "negative_voice_examples",
+            "allowed_claims",
+            "forbidden_claims",
+            "compliance_requirements",
+        )
+    ],
+    *[
+        (BusinessDirection, direction_values, field)
+        for field in (
+            "offerings",
+            "direction_value_propositions",
+            "direction_proof_points",
+            "direction_cases",
+            "internal_link_catalog",
+            "default_page_structure",
+            "allowed_claims",
+            "forbidden_claims",
+        )
+    ],
+    *[
+        (AudienceSegment, audience_values, field)
+        for field in (
+            "buyer_roles",
+            "jobs_to_be_done",
+            "pains_and_risks",
+            "objections",
+            "objection_responses",
+            "selection_criteria",
+            "minimum_expectations",
+            "purchase_triggers",
+            "decision_participants",
+            "preferred_content_formats",
+        )
+    ],
+    *[
+        (SeoBrief, brief_values, field)
+        for field in ("page_structure", "keywords", "lsi_terms", "competitor_urls")
+    ],
+]
+
+
 def test_company_profile_strips_text_deduplicates_and_freezes_collections() -> None:
     profile = CompanyProfile(**company_values())  # type: ignore[arg-type]
 
@@ -197,12 +264,30 @@ def test_invalid_ids_are_rejected(model_type: type[object], values: dict[str, ob
         build(model_type, values)
 
 
-@pytest.mark.parametrize("model_type,values", [(CompanyProfile, company_values()), (BusinessDirection, direction_values()), (AudienceSegment, audience_values()), (SeoBrief, brief_values()), (ExecutionSnapshot, snapshot_values())])
-def test_versions_must_be_positive(model_type: type[object], values: dict[str, object]) -> None:
-    version_field = next(key for key in values if key.endswith("_version"))
-    values[version_field] = 0
+@pytest.mark.parametrize("invalid_version", [True, "1", 1.0, 0, -1])
+@pytest.mark.parametrize("model_type,values_factory,version_field", MODEL_VERSION_FIELDS)
+def test_every_version_field_requires_a_strict_positive_integer(
+    model_type: type[object],
+    values_factory: object,
+    version_field: str,
+    invalid_version: object,
+) -> None:
+    values = values_factory()  # type: ignore[operator]
+    values[version_field] = invalid_version
     with pytest.raises(ValidationError):
         build(model_type, values)
+
+
+@pytest.mark.parametrize("model_type,values_factory,version_field", MODEL_VERSION_FIELDS)
+def test_every_version_field_accepts_positive_integers(
+    model_type: type[object], values_factory: object, version_field: str
+) -> None:
+    values = values_factory()  # type: ignore[operator]
+    values[version_field] = 1
+
+    model = build(model_type, values)
+
+    assert getattr(model, version_field) == 1
 
 
 def test_audience_contains_explicit_ownership_and_direction_version() -> None:
@@ -314,6 +399,45 @@ def test_every_required_collection_rejects_empty(
         build(model_type, values | {field: []})
 
 
+@pytest.mark.parametrize(
+    "invalid_collection",
+    [
+        pytest.param(lambda: (item for item in ["first", "second"]), id="generator"),
+        pytest.param(lambda: {"first", "second"}, id="set"),
+        pytest.param(lambda: frozenset({"first", "second"}), id="frozenset"),
+        pytest.param(lambda: {"first": "second"}, id="dict"),
+        pytest.param(lambda: "first", id="scalar"),
+    ],
+)
+@pytest.mark.parametrize("model_type,values_factory,field", MODEL_COLLECTION_FIELDS)
+def test_every_string_collection_accepts_only_list_or_tuple_input(
+    model_type: type[object],
+    values_factory: object,
+    field: str,
+    invalid_collection: object,
+) -> None:
+    values = values_factory()  # type: ignore[operator]
+    values[field] = invalid_collection()  # type: ignore[operator]
+
+    with pytest.raises(ValidationError):
+        build(model_type, values)
+
+
+@pytest.mark.parametrize("input_type", [list, tuple])
+def test_competitor_urls_normalize_deduplicate_and_freeze_allowed_input_types(
+    input_type: type[list[str]] | type[tuple[str, ...]],
+) -> None:
+    values = brief_values()
+    values["competitor_urls"] = input_type(
+        ["HTTPS://EXAMPLE.COM:443", "https://example.com/"]
+    )
+
+    brief = SeoBrief(**values)  # type: ignore[arg-type]
+
+    assert brief.competitor_urls == ("https://example.com/",)
+    assert isinstance(brief.competitor_urls, tuple)
+
+
 def test_urls_are_normalized_and_competitors_are_deduplicated() -> None:
     brief = SeoBrief(**brief_values())  # type: ignore[arg-type]
 
@@ -365,6 +489,38 @@ def test_url_hosts_normalize_idna_ipv4_and_ipv6() -> None:
 )
 def test_invalid_urls_are_rejected(url: str) -> None:
     values = brief_values() | {"competitor_urls": [url]}
+    with pytest.raises(ValidationError):
+        SeoBrief(**values)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "\nhttps://example.com/",
+        "\thttps://example.com/",
+        " https://example.com/",
+        "https://host name.example/",
+        "https://example.com/path with-space",
+        "https://example.com/path?query=with space",
+        "https://host\nname.example/",
+        "https://example.com/path\nsegment",
+        "https://example.com/path?query=with\nnewline",
+        "https://example.com/path?query=with\x00nul",
+        "https://example.com/path\x7fsegment",
+        "https://example.com/path?query=with\x1fcontrol",
+    ],
+)
+def test_urls_reject_raw_whitespace_and_controls_before_parsing(url: str) -> None:
+    values = brief_values() | {"competitor_urls": [url]}
+
+    with pytest.raises(ValidationError):
+        SeoBrief(**values)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("url", ["https://example.com:/", "http://[::1]:/"])
+def test_urls_reject_lexically_explicit_empty_ports(url: str) -> None:
+    values = brief_values() | {"competitor_urls": [url]}
+
     with pytest.raises(ValidationError):
         SeoBrief(**values)  # type: ignore[arg-type]
 

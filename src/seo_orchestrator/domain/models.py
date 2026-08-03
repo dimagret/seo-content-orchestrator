@@ -14,7 +14,6 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    PositiveInt,
     StringConstraints,
     field_serializer,
     field_validator,
@@ -28,6 +27,7 @@ NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
 Identifier = Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9-]{1,63}$")]
 Sha256Hex = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 NonEmptyStrings = Annotated[tuple[NonEmptyStr, ...], Field(min_length=1)]
+StrictPositiveInt = Annotated[int, Field(strict=True, gt=0)]
 
 
 _COLLECTION_FIELDS = {
@@ -64,16 +64,21 @@ _COLLECTION_FIELDS = {
 
 
 def _normalize_url(value: str) -> str:
-    raw = value.strip()
-    if not raw:
+    if value != value.strip():
+        raise ValueError("URL must not have leading or trailing whitespace")
+    if not value:
         raise ValueError("URL must not be empty")
-    if "#" in raw:
+    if any(char.isspace() or ord(char) <= 31 or ord(char) == 127 for char in value):
+        raise ValueError("URL contains whitespace or control characters")
+    if "#" in value:
         raise ValueError("URL fragments are not allowed")
-    authority = raw.partition("://")[2].split("/", 1)[0].split("?", 1)[0]
-    if "%" in authority or any(ord(char) <= 32 or ord(char) == 127 for char in authority):
+    authority = value.partition("://")[2].split("/", 1)[0].split("?", 1)[0]
+    if "%" in authority:
         raise ValueError("URL hostname contains invalid characters")
     try:
-        parsed = urlsplit(raw)
+        parsed = urlsplit(value)
+        if parsed.netloc.endswith(":"):
+            raise ValueError("URL must not contain an empty port")
         port = parsed.port
         hostname = parsed.hostname
     except ValueError as exc:
@@ -137,8 +142,12 @@ class DomainModel(BaseModel):
     @field_validator("*", mode="before")
     @classmethod
     def normalize_string_collections(cls, value: object, info: Any) -> object:
-        if info.field_name not in _COLLECTION_FIELDS or not isinstance(value, (list, tuple)):
+        if info.field_name not in _COLLECTION_FIELDS:
             return value
+        if not isinstance(value, (list, tuple)):
+            raise ValueError(  # noqa: TRY004 - Pydantic converts ValueError to ValidationError.
+                f"{info.field_name} must be provided as a list or tuple"
+            )
         result: list[str] = []
         seen: set[str] = set()
         for item in value:
@@ -175,7 +184,7 @@ class DomainModel(BaseModel):
 class CompanyProfile(DomainModel):
     company_id: Identifier
     company_profile_id: Identifier
-    company_profile_version: PositiveInt
+    company_profile_version: StrictPositiveInt
     name: NonEmptyStr
     brand_summary: NonEmptyStr
     products_services_overview: NonEmptyStr
@@ -203,8 +212,8 @@ class CompanyProfile(DomainModel):
 class BusinessDirection(DomainModel):
     direction_id: Identifier
     company_id: Identifier
-    company_profile_version: PositiveInt
-    direction_version: PositiveInt
+    company_profile_version: StrictPositiveInt
+    direction_version: StrictPositiveInt
     name: NonEmptyStr
     offerings: NonEmptyStrings
     category_context: NonEmptyStr
@@ -226,8 +235,8 @@ class AudienceSegment(DomainModel):
     audience_segment_id: Identifier
     company_id: Identifier
     direction_id: Identifier
-    direction_version: PositiveInt
-    audience_version: PositiveInt
+    direction_version: StrictPositiveInt
+    audience_version: StrictPositiveInt
     name: NonEmptyStr
     buyer_roles: NonEmptyStrings
     industry: NonEmptyStr
@@ -251,11 +260,11 @@ class AudienceSegment(DomainModel):
 class SeoBrief(DomainModel):
     brief_id: Identifier
     company_id: Identifier
-    company_profile_version: PositiveInt
+    company_profile_version: StrictPositiveInt
     direction_id: Identifier
-    direction_version: PositiveInt
+    direction_version: StrictPositiveInt
     audience_segment_id: Identifier
-    audience_version: PositiveInt
+    audience_version: StrictPositiveInt
     page_type: NonEmptyStr
     goal: NonEmptyStr
     target_language: NonEmptyStr
@@ -276,7 +285,9 @@ class SeoBrief(DomainModel):
     @classmethod
     def normalize_competitor_urls(cls, value: object) -> object:
         if not isinstance(value, (list, tuple)):
-            return value
+            raise ValueError(  # noqa: TRY004 - Pydantic converts ValueError to ValidationError.
+                "competitor_urls must be provided as a list or tuple"
+            )
         result: list[str] = []
         seen: set[str] = set()
         for item in value:
@@ -306,12 +317,12 @@ class ExecutionSnapshot(DomainModel):
     snapshot_id: Identifier
     brief_id: Identifier
     company_id: Identifier
-    company_profile_version: PositiveInt
+    company_profile_version: StrictPositiveInt
     direction_id: Identifier
-    direction_version: PositiveInt
+    direction_version: StrictPositiveInt
     audience_segment_id: Identifier
-    audience_version: PositiveInt
-    prompt_set_version: PositiveInt
+    audience_version: StrictPositiveInt
+    prompt_set_version: StrictPositiveInt
     compiled_context: object
     snapshot_hash: Sha256Hex
     created_at: datetime
