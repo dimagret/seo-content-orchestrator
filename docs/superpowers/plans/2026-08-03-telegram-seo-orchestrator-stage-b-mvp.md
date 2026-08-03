@@ -294,6 +294,7 @@ seo-content-orchestrator/
 - Create: `pyproject.toml`
 - Create: `.gitignore`
 - Create: `README.md`
+- Create: `integrations/__init__.py`
 - Create: `src/seo_orchestrator/__init__.py`
 - Create: `src/seo_orchestrator/settings.py`
 - Create: `tests/unit/test_settings.py`
@@ -411,7 +412,7 @@ uv lock
 uv sync --frozen
 uv run pytest tests/unit/test_settings.py -v
 uv run ruff check .
-uv run mypy src
+uv run mypy src integrations
 ```
 
 Expected: all commands exit `0`.

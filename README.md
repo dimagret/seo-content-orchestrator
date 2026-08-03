@@ -19,7 +19,7 @@ Python 3.13 or newer and [uv](https://docs.astral.sh/uv/) are required.
 uv sync --frozen
 uv run pytest
 uv run ruff check .
-uv run mypy src
+uv run mypy src integrations
 ```
 
 Default development settings are defined in `seo_orchestrator.settings.Settings` and can be
