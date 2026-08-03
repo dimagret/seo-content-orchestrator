@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from ipaddress import ip_address
 from types import MappingProxyType
 from typing import Annotated, Any, cast
 from urllib.parse import SplitResult, urlsplit, urlunsplit
@@ -26,7 +28,7 @@ NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
 Identifier = Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9-]{1,63}$")]
 Sha256Hex = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 NonEmptyStrings = Annotated[tuple[NonEmptyStr, ...], Field(min_length=1)]
-Strings = tuple[NonEmptyStr, ...]
+
 
 _COLLECTION_FIELDS = {
     "value_propositions",
@@ -40,7 +42,6 @@ _COLLECTION_FIELDS = {
     "forbidden_claims",
     "compliance_requirements",
     "offerings",
-    "category_context",
     "direction_value_propositions",
     "direction_proof_points",
     "direction_cases",
@@ -68,6 +69,9 @@ def _normalize_url(value: str) -> str:
         raise ValueError("URL must not be empty")
     if "#" in raw:
         raise ValueError("URL fragments are not allowed")
+    authority = raw.partition("://")[2].split("/", 1)[0].split("?", 1)[0]
+    if "%" in authority or any(ord(char) <= 32 or ord(char) == 127 for char in authority):
+        raise ValueError("URL hostname contains invalid characters")
     try:
         parsed = urlsplit(raw)
         port = parsed.port
@@ -82,11 +86,27 @@ def _normalize_url(value: str) -> str:
     if parsed.username is not None or parsed.password is not None:
         raise ValueError("URL credentials are not allowed")
     try:
-        ascii_host = hostname.encode("idna").decode("ascii").lower()
-    except UnicodeError as exc:
-        raise ValueError("URL hostname is invalid") from exc
-    if ":" in ascii_host:
-        ascii_host = f"[{ascii_host}]"
+        parsed_ip = ip_address(hostname)
+    except ValueError:
+        if ":" in hostname or ("." in hostname and set(hostname) <= set("0123456789.")):
+            raise ValueError("URL contains a malformed IP literal") from None
+        try:
+            ascii_host = hostname.encode("idna").decode("ascii").lower()
+        except UnicodeError as exc:
+            raise ValueError("URL hostname is invalid") from exc
+        if len(ascii_host) > 253:
+            raise ValueError("URL hostname exceeds 253 characters")
+        labels = ascii_host.split(".")
+        if any(
+            not 1 <= len(label) <= 63
+            or re.fullmatch(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", label) is None
+            for label in labels
+        ):
+            raise ValueError("URL hostname has an invalid DNS label")
+    else:
+        ascii_host = str(parsed_ip)
+        if parsed_ip.version == 6:
+            ascii_host = f"[{ascii_host}]"
     include_port = port is not None and not (
         (scheme == "http" and port == 80) or (scheme == "https" and port == 443)
     )
@@ -163,17 +183,17 @@ class CompanyProfile(DomainModel):
     pricing_overview: NonEmptyStr
     service_geography: NonEmptyStr
     value_propositions: NonEmptyStrings
-    proof_points: Strings
-    certifications: Strings
-    case_references: Strings
+    proof_points: NonEmptyStrings
+    certifications: NonEmptyStrings
+    case_references: NonEmptyStrings
     tools_and_process: NonEmptyStrings
     tone_of_voice: NonEmptyStr
-    positive_voice_examples: Strings
-    negative_voice_examples: Strings
+    positive_voice_examples: NonEmptyStrings
+    negative_voice_examples: NonEmptyStrings
     reading_level: NonEmptyStr
-    allowed_claims: Strings
-    forbidden_claims: Strings
-    compliance_requirements: Strings
+    allowed_claims: NonEmptyStrings
+    forbidden_claims: NonEmptyStrings
+    compliance_requirements: NonEmptyStrings
     default_language: NonEmptyStr
     default_locale: NonEmptyStr
     created_at: datetime
@@ -187,17 +207,17 @@ class BusinessDirection(DomainModel):
     direction_version: PositiveInt
     name: NonEmptyStr
     offerings: NonEmptyStrings
-    category_context: NonEmptyStrings
+    category_context: NonEmptyStr
     prices_and_tariffs: NonEmptyStr
     direction_value_propositions: NonEmptyStrings
-    direction_proof_points: Strings
-    direction_cases: Strings
-    internal_link_catalog: Strings
+    direction_proof_points: NonEmptyStrings
+    direction_cases: NonEmptyStrings
+    internal_link_catalog: NonEmptyStrings
     default_page_structure: NonEmptyStrings
     default_language: NonEmptyStr
     default_locale: NonEmptyStr
-    allowed_claims: Strings
-    forbidden_claims: Strings
+    allowed_claims: NonEmptyStrings
+    forbidden_claims: NonEmptyStrings
     created_at: datetime
     updated_at: datetime
 
@@ -215,8 +235,8 @@ class AudienceSegment(DomainModel):
     geography: NonEmptyStr
     jobs_to_be_done: NonEmptyStrings
     pains_and_risks: NonEmptyStrings
-    objections: Strings
-    objection_responses: Strings
+    objections: NonEmptyStrings
+    objection_responses: NonEmptyStrings
     selection_criteria: NonEmptyStrings
     minimum_expectations: NonEmptyStrings
     purchase_triggers: NonEmptyStrings
@@ -243,11 +263,11 @@ class SeoBrief(DomainModel):
     page_structure: NonEmptyStrings
     primary_keyword: NonEmptyStr
     keywords: NonEmptyStrings
-    lsi_terms: Strings
-    competitor_urls: tuple[NonEmptyStr, ...]
-    current_page_url: NonEmptyStr | None
-    current_page_context: NonEmptyStr | None
-    output_sheet_target: NonEmptyStr | None
+    lsi_terms: NonEmptyStrings
+    competitor_urls: NonEmptyStrings
+    current_page_url: NonEmptyStr | None = None
+    current_page_context: NonEmptyStr | None = None
+    output_sheet_target: NonEmptyStr | None = None
     created_by: Identifier
     created_at: datetime
     updated_at: datetime

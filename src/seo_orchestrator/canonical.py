@@ -9,7 +9,9 @@ from typing import cast
 from seo_orchestrator.errors import CanonicalizationError
 
 type JsonScalar = None | bool | int | str
-type JsonValue = JsonScalar | list[JsonValue] | dict[str, JsonValue]
+type JsonValue = (
+    JsonScalar | list[JsonValue] | tuple[JsonValue, ...] | dict[str, JsonValue]
+)
 
 
 def _normalize(value: object) -> JsonValue:

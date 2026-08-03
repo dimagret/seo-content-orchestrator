@@ -27,17 +27,17 @@ def company_values() -> dict[str, object]:
         "pricing_overview": "From 1000 EUR",
         "service_geography": "Europe",
         "value_propositions": ["Fast", "Measurable", "Fast"],
-        "proof_points": [],
-        "certifications": [],
-        "case_references": [],
+        "proof_points": ["Published results"],
+        "certifications": ["ISO 9001"],
+        "case_references": ["Case study A"],
         "tools_and_process": ["Research", "Review"],
         "tone_of_voice": "Clear",
         "positive_voice_examples": ["Direct and useful"],
-        "negative_voice_examples": [],
+        "negative_voice_examples": ["Vague hype"],
         "reading_level": "General business",
         "allowed_claims": ["Evidence-backed"],
-        "forbidden_claims": [],
-        "compliance_requirements": [],
+        "forbidden_claims": ["Guaranteed rankings"],
+        "compliance_requirements": ["Cite evidence"],
         "default_language": "en",
         "default_locale": "en-GB",
         "created_at": CREATED,
@@ -53,17 +53,17 @@ def direction_values() -> dict[str, object]:
         "direction_version": 2,
         "name": "SEO consulting",
         "offerings": ["Audit"],
-        "category_context": ["B2B SEO"],
+        "category_context": "B2B SEO",
         "prices_and_tariffs": "From 1000 EUR",
         "direction_value_propositions": ["Senior specialists"],
-        "direction_proof_points": [],
-        "direction_cases": [],
+        "direction_proof_points": ["20% traffic growth"],
+        "direction_cases": ["SaaS case"],
         "internal_link_catalog": ["https://example.com/services"],
         "default_page_structure": ["Hero", "Benefits"],
         "default_language": "en",
         "default_locale": "en-GB",
-        "allowed_claims": [],
-        "forbidden_claims": [],
+        "allowed_claims": ["Evidence-backed growth"],
+        "forbidden_claims": ["Guaranteed results"],
         "created_at": CREATED,
         "updated_at": UPDATED,
     }
@@ -83,8 +83,8 @@ def audience_values() -> dict[str, object]:
         "geography": "Europe",
         "jobs_to_be_done": ["Grow qualified traffic"],
         "pains_and_risks": ["Unpredictable pipeline"],
-        "objections": [],
-        "objection_responses": [],
+        "objections": ["Too expensive"],
+        "objection_responses": ["Show ROI model"],
         "selection_criteria": ["Relevant experience"],
         "minimum_expectations": ["Monthly reporting"],
         "purchase_triggers": ["Traffic decline"],
@@ -113,7 +113,7 @@ def brief_values() -> dict[str, object]:
         "page_structure": ["Hero", "Proof"],
         "primary_keyword": "seo consulting",
         "keywords": ["seo agency", "seo consulting"],
-        "lsi_terms": [],
+        "lsi_terms": ["organic search consulting"],
         "competitor_urls": [
             "HTTPS://EXAMPLE.COM:443",
             "https://example.com/",
@@ -214,6 +214,14 @@ def test_audience_contains_explicit_ownership_and_direction_version() -> None:
     )
 
 
+def test_direction_category_context_is_a_non_empty_string() -> None:
+    direction = BusinessDirection(**direction_values())  # type: ignore[arg-type]
+    assert direction.category_context == "B2B SEO"
+
+    with pytest.raises(ValidationError):
+        BusinessDirection(**(direction_values() | {"category_context": " "}))  # type: ignore[arg-type]
+
+
 @pytest.mark.parametrize("url,context", [(None, None), ("https://example.com", "source")])
 def test_brief_requires_exactly_one_current_page_source(
     url: str | None, context: str | None
@@ -224,11 +232,35 @@ def test_brief_requires_exactly_one_current_page_source(
 
 
 @pytest.mark.parametrize(
+    "present_field,present_value,omitted_field",
+    [
+        ("current_page_url", "https://example.com/current", "current_page_context"),
+        ("current_page_context", "Existing page copy", "current_page_url"),
+    ],
+)
+def test_brief_allows_omitting_unused_current_page_alternative(
+    present_field: str, present_value: str, omitted_field: str
+) -> None:
+    values = brief_values()
+    values[present_field] = present_value
+    values.pop(omitted_field)
+    brief = SeoBrief(**values)  # type: ignore[arg-type]
+    assert getattr(brief, present_field) is not None
+    assert getattr(brief, omitted_field) is None
+
+
+def test_brief_allows_omitting_output_sheet_target() -> None:
+    values = brief_values()
+    values.pop("output_sheet_target")
+    assert SeoBrief(**values).output_sheet_target is None  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
     "model_type,values",
     [
         (CompanyProfile, company_values() | {"default_language": " "}),
         (CompanyProfile, company_values() | {"default_locale": ""}),
-        (BusinessDirection, direction_values() | {"category_context": []}),
+        (BusinessDirection, direction_values() | {"category_context": ""}),
         (SeoBrief, brief_values() | {"page_structure": []}),
         (AudienceSegment, audience_values() | {"buyer_roles": []}),
         (AudienceSegment, audience_values() | {"jobs_to_be_done": []}),
@@ -242,6 +274,46 @@ def test_required_text_and_collection_content_cannot_be_empty(
         build(model_type, values)
 
 
+@pytest.mark.parametrize(
+    "model_type,values,field",
+    [
+        *[
+            (CompanyProfile, company_values(), field)
+            for field in (
+                "value_propositions", "proof_points", "certifications", "case_references",
+                "tools_and_process", "positive_voice_examples", "negative_voice_examples",
+                "allowed_claims", "forbidden_claims", "compliance_requirements",
+            )
+        ],
+        *[
+            (BusinessDirection, direction_values(), field)
+            for field in (
+                "offerings", "direction_value_propositions", "direction_proof_points",
+                "direction_cases", "internal_link_catalog", "default_page_structure",
+                "allowed_claims", "forbidden_claims",
+            )
+        ],
+        *[
+            (AudienceSegment, audience_values(), field)
+            for field in (
+                "buyer_roles", "jobs_to_be_done", "pains_and_risks", "objections",
+                "objection_responses", "selection_criteria", "minimum_expectations",
+                "purchase_triggers", "decision_participants", "preferred_content_formats",
+            )
+        ],
+        *[
+            (SeoBrief, brief_values(), field)
+            for field in ("page_structure", "keywords", "lsi_terms", "competitor_urls")
+        ],
+    ],
+)
+def test_every_required_collection_rejects_empty(
+    model_type: type[object], values: dict[str, object], field: str
+) -> None:
+    with pytest.raises(ValidationError):
+        build(model_type, values | {field: []})
+
+
 def test_urls_are_normalized_and_competitors_are_deduplicated() -> None:
     brief = SeoBrief(**brief_values())  # type: ignore[arg-type]
 
@@ -250,6 +322,22 @@ def test_urls_are_normalized_and_competitors_are_deduplicated() -> None:
         "http://xn--bcher-kva.example/path?q=1",
     )
     assert brief.current_page_url == "http://example.com/current?draft=1"
+
+
+def test_url_hosts_normalize_idna_ipv4_and_ipv6() -> None:
+    values = brief_values() | {
+        "competitor_urls": [
+            "https://BÜCHER.example/path",
+            "http://192.168.1.1:80/path",
+            "HTTPS://[2001:0DB8:0:0:0:0:0:1]:443/path",
+        ]
+    }
+    brief = SeoBrief(**values)  # type: ignore[arg-type]
+    assert brief.competitor_urls == (
+        "https://xn--bcher-kva.example/path",
+        "http://192.168.1.1/path",
+        "https://[2001:db8::1]/path",
+    )
 
 
 @pytest.mark.parametrize(
@@ -261,6 +349,18 @@ def test_urls_are_normalized_and_competitors_are_deduplicated() -> None:
         "https://example.com/path#fragment",
         "https://example.com:invalid/",
         "https://example.com:99999/",
+        "https://example.com./",
+        "https://two..dots.example/",
+        "https://under_score.example/",
+        "https://-leading.example/",
+        "https://trailing-.example/",
+        "https://host%20name.example/",
+        "https://host name.example/",
+        "https://host\nname.example/",
+        "https://[2001:db8:::1]/",
+        "https://999.999.999.999/",
+        f"https://{'a' * 64}.example/",
+        f"https://{'a.' * 126}aa/",
     ],
 )
 def test_invalid_urls_are_rejected(url: str) -> None:
