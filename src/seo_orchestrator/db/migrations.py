@@ -134,6 +134,10 @@ _MIGRATION_0001 = (
     )
     """,
     """
+    CREATE UNIQUE INDEX idx_jobs_company_job_id
+    ON jobs(company_id, job_id)
+    """,
+    """
     CREATE UNIQUE INDEX one_active_job_per_creator
     ON jobs(created_by)
     WHERE state IN (
