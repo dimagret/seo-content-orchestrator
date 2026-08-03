@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
+from typing import cast
 
 from seo_orchestrator.errors import CanonicalizationError
 
@@ -46,19 +47,24 @@ class _ValidationState:
                 )
 
 
-def _validate(value: object, *, depth: int, state: _ValidationState) -> None:
-    if isinstance(value, str):
-        state.visit_string(value)
-        return
+def _normalize(value: object, *, depth: int, state: _ValidationState) -> JsonValue:
+    value_type = type(value)
+    if value_type is str:
+        string_value = cast(str, value)
+        state.visit_string(string_value)
+        return string_value
 
     state.visit_node()
-    if value is None or isinstance(value, bool):
-        return
-    if isinstance(value, int):
-        if not -MAX_SAFE_INTEGER <= value <= MAX_SAFE_INTEGER:
+    if value is None:
+        return None
+    if value_type is bool:
+        return cast(bool, value)
+    if value_type is int:
+        integer_value = cast(int, value)
+        if not -MAX_SAFE_INTEGER <= integer_value <= MAX_SAFE_INTEGER:
             raise CanonicalizationError("canonical JSON integer is outside the safe range")
-        return
-    if not isinstance(value, (list, dict)):
+        return integer_value
+    if value_type is not list and value_type is not dict:
         raise CanonicalizationError(
             f"unsupported canonical JSON value type: {type(value).__name__}"
         )
@@ -70,15 +76,23 @@ def _validate(value: object, *, depth: int, state: _ValidationState) -> None:
         raise CanonicalizationError("canonical JSON contains a container cycle")
     state.active_containers.add(identity)
     try:
-        if isinstance(value, list):
-            for item in value:
-                _validate(item, depth=depth + 1, state=state)
-            return
-        for key, item in value.items():
-            if not isinstance(key, str):
+        if value_type is list:
+            normalized_list: list[JsonValue] = []
+            for item in cast(list[object], value):
+                normalized_list.append(
+                    _normalize(item, depth=depth + 1, state=state)
+                )
+            return normalized_list
+        normalized_dict: dict[str, JsonValue] = {}
+        for key, item in cast(dict[object, object], value).items():
+            if type(key) is not str:
                 raise CanonicalizationError("canonical JSON object keys must be strings")
-            state.visit_string(key)
-            _validate(item, depth=depth + 1, state=state)
+            string_key = key
+            state.visit_string(string_key)
+            normalized_dict[string_key] = _normalize(
+                item, depth=depth + 1, state=state
+            )
+        return normalized_dict
     finally:
         state.active_containers.remove(identity)
 
@@ -92,9 +106,9 @@ def canonical_json(value: JsonValue) -> bytes:
     final encoded-payload limit.
     """
     try:
-        _validate(value, depth=0, state=_ValidationState())
+        normalized = _normalize(value, depth=0, state=_ValidationState())
         payload = json.dumps(
-            value,
+            normalized,
             sort_keys=True,
             ensure_ascii=False,
             separators=(",", ":"),

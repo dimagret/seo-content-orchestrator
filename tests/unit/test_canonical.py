@@ -15,6 +15,110 @@ from seo_orchestrator.canonical import (
 from seo_orchestrator.errors import CanonicalizationError
 
 
+class StrSubclass(str):
+    def encode(self, *args: object, **kwargs: object) -> bytes:
+        raise AssertionError("str subclass behavior must not be invoked")
+
+
+class IntSubclass(int):
+    def __le__(self, other: object) -> bool:
+        raise AssertionError("int subclass comparison must not be invoked")
+
+    def __ge__(self, other: object) -> bool:
+        raise AssertionError("int subclass comparison must not be invoked")
+
+    def __int__(self) -> int:
+        raise AssertionError("int subclass conversion must not be invoked")
+
+
+class StatefulList(list[object]):
+    iterations = 0
+
+    def __iter__(self):  # type: ignore[no-untyped-def]
+        type(self).iterations += 1
+        if type(self).iterations == 1:
+            return iter(())
+        return iter([None] * (MAX_CANONICAL_NODES * 2))
+
+
+class ThrowingDict(dict[str, object]):
+    item_traversals = 0
+    iterations = 0
+
+    def items(self):  # type: ignore[no-untyped-def]
+        type(self).item_traversals += 1
+        raise RuntimeError("dict subclass items must not be invoked")
+
+    def __iter__(self):  # type: ignore[no-untyped-def]
+        type(self).iterations += 1
+        raise RuntimeError("dict subclass iteration must not be invoked")
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param(StrSubclass("value"), id="str"),
+        pytest.param(IntSubclass(1), id="int"),
+        pytest.param(StatefulList(["hidden"]), id="list"),
+        pytest.param(ThrowingDict({"key": "value"}), id="dict"),
+    ],
+)
+def test_canonical_json_rejects_subclasses_of_accepted_runtime_types(
+    value: object,
+) -> None:
+    StatefulList.iterations = 0
+    ThrowingDict.item_traversals = 0
+    ThrowingDict.iterations = 0
+
+    with pytest.raises(CanonicalizationError):
+        canonical_json(value)  # type: ignore[arg-type]
+
+    assert StatefulList.iterations == 0
+    assert ThrowingDict.item_traversals == 0
+    assert ThrowingDict.iterations == 0
+
+
+def test_canonical_json_rejects_string_subclass_dictionary_keys() -> None:
+    with pytest.raises(CanonicalizationError, match="keys"):
+        canonical_json({StrSubclass("key"): "value"})  # type: ignore[dict-item]
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param([StrSubclass("value")], id="str-in-list"),
+        pytest.param({"nested": IntSubclass(1)}, id="int-in-dict"),
+        pytest.param([StatefulList()], id="list-in-list"),
+        pytest.param({"nested": ThrowingDict()}, id="dict-in-dict"),
+    ],
+)
+def test_canonical_json_rejects_accepted_type_subclasses_when_nested(
+    value: object,
+) -> None:
+    StatefulList.iterations = 0
+    ThrowingDict.item_traversals = 0
+    ThrowingDict.iterations = 0
+
+    with pytest.raises(CanonicalizationError):
+        canonical_json(value)  # type: ignore[arg-type]
+
+    assert StatefulList.iterations == 0
+    assert ThrowingDict.item_traversals == 0
+    assert ThrowingDict.iterations == 0
+
+
+@pytest.mark.parametrize(
+    "value",
+    [StrSubclass("value"), IntSubclass(1), StatefulList(), ThrowingDict()],
+    ids=["str", "int", "list", "dict"],
+)
+def test_sha256_fingerprint_rejects_accepted_type_subclasses_with_controlled_error(
+    value: object,
+) -> None:
+    with pytest.raises(CanonicalizationError):
+        sha256_fingerprint(value)  # type: ignore[arg-type]
+
+
 def test_canonical_json_is_compact_unicode_and_key_order_independent() -> None:
     first = {"я": "да", "a": 1}
     second = {"a": 1, "я": "да"}

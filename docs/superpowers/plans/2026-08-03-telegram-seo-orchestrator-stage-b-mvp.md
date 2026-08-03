@@ -64,7 +64,9 @@ class ExternalStatus(StrEnum):
 
 Canonical JSON is resource-bounded and fail-closed. It permits integers only in the
 cross-language JSON-safe range `-(2**53 - 1)` through `+(2**53 - 1)`; `bool` remains a
-separately accepted scalar. The maximum container depth is 64, where a container root is
+separately accepted scalar. Runtime values must use exact built-in JSON types; subclasses
+are rejected, and the guarded traversal builds a plain representation before serialization.
+The maximum container depth is 64, where a container root is
 depth 0 and a nested container at depth 64 is accepted while depth 65 is rejected. The
 maximum recursively visited node count is 10,000: account once for the root, every list
 item, every dictionary value, and every dictionary key (containers count when visited as

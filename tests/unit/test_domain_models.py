@@ -741,6 +741,46 @@ def test_compiled_context_rejects_non_json_values(context: object) -> None:
         ExecutionSnapshot(**values)  # type: ignore[arg-type]
 
 
+class CompiledContextStrSubclass(str):
+    pass
+
+
+class CompiledContextIntSubclass(int):
+    def __le__(self, other: object) -> bool:
+        raise RuntimeError("comparison must not escape validation")
+
+
+class CompiledContextListSubclass(list[object]):
+    def __iter__(self):  # type: ignore[no-untyped-def]
+        raise RuntimeError("iteration must not escape validation")
+
+
+class CompiledContextDictSubclass(dict[str, object]):
+    def items(self):  # type: ignore[no-untyped-def]
+        raise RuntimeError("items must not escape validation")
+
+
+@pytest.mark.parametrize(
+    "context",
+    [
+        pytest.param(CompiledContextStrSubclass("value"), id="str"),
+        pytest.param(CompiledContextIntSubclass(1), id="int"),
+        pytest.param(CompiledContextListSubclass(), id="list"),
+        pytest.param(CompiledContextDictSubclass(), id="dict"),
+        pytest.param({CompiledContextStrSubclass("key"): "value"}, id="str-key"),
+        pytest.param([CompiledContextStrSubclass("nested")], id="nested-list"),
+        pytest.param({"nested": CompiledContextDictSubclass()}, id="nested-dict"),
+    ],
+)
+def test_compiled_context_rejects_accepted_type_subclasses_with_controlled_error(
+    context: object,
+) -> None:
+    values = snapshot_values() | {"compiled_context": context}
+
+    with pytest.raises(ValidationError, match="compiled_context"):
+        ExecutionSnapshot(**values)  # type: ignore[arg-type]
+
+
 def test_compiled_context_is_deeply_immutable_and_can_be_thawed() -> None:
     original = {"sections": ["hero", {"proof": True}], "count": 2}
     snapshot = ExecutionSnapshot(**(snapshot_values() | {"compiled_context": original}))  # type: ignore[arg-type]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
@@ -348,10 +349,10 @@ class ExecutionSnapshot(DomainModel):
     @classmethod
     def validate_and_freeze_context(cls, value: object) -> object:
         try:
-            canonical_json(cast(JsonValue, value))
+            normalized = json.loads(canonical_json(cast(JsonValue, value)))
         except CanonicalizationError as exc:
             raise ValueError("compiled_context must contain only canonical JSON values") from exc
-        return _freeze_json(cast(JsonValue, value))
+        return _freeze_json(cast(JsonValue, normalized))
 
     @field_serializer("compiled_context", return_type=Any)
     def serialize_compiled_context(self, value: object) -> Any:
