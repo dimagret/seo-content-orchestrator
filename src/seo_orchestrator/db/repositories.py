@@ -58,6 +58,22 @@ class ApprovalRecord:
     expires_at: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class BriefDraftRecord:
+    brief_id: str
+    company_id: str
+    company_profile_version: int
+    direction_id: str | None
+    direction_version: int | None
+    audience_segment_id: str | None
+    audience_version: int | None
+    brief_json: bytes
+    status: str
+    created_by: str
+    created_at: str
+    updated_at: str
+
+
 class CompanyRepository:
     """Persist and retrieve versioned company-owned configuration."""
 
@@ -234,13 +250,117 @@ class BriefRepository:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
-    def add_brief(self, brief: SeoBrief) -> None:
+    def add_draft(self, record: BriefDraftRecord) -> None:
         self._conn.execute(
             """INSERT INTO brief_drafts(
                    brief_id, company_id, company_profile_version, direction_id,
                    direction_version, audience_segment_id, audience_version,
-                   brief_json, created_by, created_at, updated_at
-               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   brief_json, status, created_by, created_at, updated_at
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                record.brief_id,
+                record.company_id,
+                record.company_profile_version,
+                record.direction_id,
+                record.direction_version,
+                record.audience_segment_id,
+                record.audience_version,
+                record.brief_json,
+                record.status,
+                record.created_by,
+                record.created_at,
+                record.updated_at,
+            ),
+        )
+
+    def get_draft(
+        self, company_id: str, brief_id: str, actor_id: str
+    ) -> BriefDraftRecord:
+        row = self._conn.execute(
+            """SELECT brief_id, company_id, company_profile_version, direction_id,
+                      direction_version, audience_segment_id, audience_version,
+                      brief_json, status, created_by, created_at, updated_at
+               FROM brief_drafts
+               WHERE company_id = ? AND brief_id = ? AND created_by = ?""",
+            (company_id, brief_id, actor_id),
+        ).fetchone()
+        if row is None:
+            raise NotFound
+        return BriefDraftRecord(
+            brief_id=row[0],
+            company_id=row[1],
+            company_profile_version=row[2],
+            direction_id=row[3],
+            direction_version=row[4],
+            audience_segment_id=row[5],
+            audience_version=row[6],
+            brief_json=bytes(row[7]),
+            status=row[8],
+            created_by=row[9],
+            created_at=row[10],
+            updated_at=row[11],
+        )
+
+
+    def get_validated_draft(self, company_id: str, brief_id: str) -> BriefDraftRecord:
+        row = self._conn.execute(
+            """SELECT brief_id, company_id, company_profile_version, direction_id,
+                      direction_version, audience_segment_id, audience_version,
+                      brief_json, status, created_by, created_at, updated_at
+               FROM brief_drafts
+               WHERE company_id = ? AND brief_id = ? AND status = 'validated'""",
+            (company_id, brief_id),
+        ).fetchone()
+        if row is None:
+            raise NotFound
+        return BriefDraftRecord(
+            brief_id=row[0],
+            company_id=row[1],
+            company_profile_version=row[2],
+            direction_id=row[3],
+            direction_version=row[4],
+            audience_segment_id=row[5],
+            audience_version=row[6],
+            brief_json=bytes(row[7]),
+            status=row[8],
+            created_by=row[9],
+            created_at=row[10],
+            updated_at=row[11],
+        )
+
+    def update_draft(self, scoped_company_id: str, record: BriefDraftRecord) -> None:
+        cursor = self._conn.execute(
+            """UPDATE brief_drafts
+               SET company_id = ?, company_profile_version = ?, direction_id = ?,
+                   direction_version = ?, audience_segment_id = ?, audience_version = ?,
+                   brief_json = ?, status = ?, updated_at = ?
+               WHERE company_id = ? AND brief_id = ? AND created_by = ?""",
+            (
+                record.company_id,
+                record.company_profile_version,
+                record.direction_id,
+                record.direction_version,
+                record.audience_segment_id,
+                record.audience_version,
+                record.brief_json,
+                record.status,
+                record.updated_at,
+                scoped_company_id,
+                record.brief_id,
+                record.created_by,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise NotFound
+
+    def add_brief(self, brief: SeoBrief) -> None:
+        """Persist an already complete domain brief as validated."""
+        self._conn.execute(
+            """INSERT INTO brief_drafts(
+                   brief_id, company_id, company_profile_version, direction_id,
+                   direction_version, audience_segment_id, audience_version,
+                   brief_json, status, created_by, created_at, updated_at
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'validated', ?, ?, ?)""",
             (
                 brief.brief_id,
                 brief.company_id,
@@ -286,7 +406,10 @@ class SnapshotRepository:
                )
                SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                FROM brief_drafts
-               WHERE company_id = ? AND brief_id = ?""",
+               WHERE company_id = ? AND brief_id = ? AND status = 'validated'
+                 AND company_profile_version = ? AND direction_id = ?
+                 AND direction_version = ? AND audience_segment_id = ?
+                 AND audience_version = ?""",
             (
                 snapshot.snapshot_id,
                 snapshot.brief_id,
@@ -302,6 +425,11 @@ class SnapshotRepository:
                 snapshot.created_at.isoformat(),
                 snapshot.company_id,
                 snapshot.brief_id,
+                snapshot.company_profile_version,
+                snapshot.direction_id,
+                snapshot.direction_version,
+                snapshot.audience_segment_id,
+                snapshot.audience_version,
             ),
         )
         if cursor.rowcount != 1:
@@ -330,6 +458,34 @@ class SnapshotRepository:
             audience_version=row[7],
             prompt_set_version=row[8],
             compiled_context=json.loads(context_bytes),
+            snapshot_hash=row[10],
+            created_at=datetime.fromisoformat(row[11]),
+        )
+
+    def get_snapshot_by_hash(
+        self, company_id: str, snapshot_hash: str
+    ) -> ExecutionSnapshot | None:
+        row = self._conn.execute(
+            """SELECT snapshot_id, brief_id, company_id, company_profile_version,
+                      direction_id, direction_version, audience_segment_id, audience_version,
+                      prompt_set_version, compiled_context, snapshot_hash, created_at
+               FROM execution_snapshots
+               WHERE company_id = ? AND snapshot_hash = ?""",
+            (company_id, snapshot_hash),
+        ).fetchone()
+        if row is None:
+            return None
+        return ExecutionSnapshot(
+            snapshot_id=row[0],
+            brief_id=row[1],
+            company_id=row[2],
+            company_profile_version=row[3],
+            direction_id=row[4],
+            direction_version=row[5],
+            audience_segment_id=row[6],
+            audience_version=row[7],
+            prompt_set_version=row[8],
+            compiled_context=json.loads(bytes(row[9])),
             snapshot_hash=row[10],
             created_at=datetime.fromisoformat(row[11]),
         )
