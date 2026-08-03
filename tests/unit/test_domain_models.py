@@ -165,6 +165,26 @@ MODEL_VERSION_FIELDS = [
     (ExecutionSnapshot, snapshot_values, "prompt_set_version"),
 ]
 
+MODEL_IDENTIFIER_FIELDS = [
+    (CompanyProfile, company_values, "company_id"),
+    (CompanyProfile, company_values, "company_profile_id"),
+    (BusinessDirection, direction_values, "direction_id"),
+    (BusinessDirection, direction_values, "company_id"),
+    (AudienceSegment, audience_values, "audience_segment_id"),
+    (AudienceSegment, audience_values, "company_id"),
+    (AudienceSegment, audience_values, "direction_id"),
+    (SeoBrief, brief_values, "brief_id"),
+    (SeoBrief, brief_values, "company_id"),
+    (SeoBrief, brief_values, "direction_id"),
+    (SeoBrief, brief_values, "audience_segment_id"),
+    (SeoBrief, brief_values, "created_by"),
+    (ExecutionSnapshot, snapshot_values, "snapshot_id"),
+    (ExecutionSnapshot, snapshot_values, "brief_id"),
+    (ExecutionSnapshot, snapshot_values, "company_id"),
+    (ExecutionSnapshot, snapshot_values, "direction_id"),
+    (ExecutionSnapshot, snapshot_values, "audience_segment_id"),
+]
+
 
 MODEL_COLLECTION_FIELDS = [
     *[
@@ -263,6 +283,36 @@ def test_invalid_ids_are_rejected(model_type: type[object], values: dict[str, ob
     values[id_field] = "Invalid_ID"
     with pytest.raises(ValidationError):
         build(model_type, values)
+
+
+@pytest.mark.parametrize("model_type,values_factory,id_field", MODEL_IDENTIFIER_FIELDS)
+def test_every_identifier_field_rejects_regex_valid_bytes(
+    model_type: type[object], values_factory: object, id_field: str
+) -> None:
+    values = values_factory()  # type: ignore[operator]
+    values[id_field] = b"company-1"
+
+    with pytest.raises(ValidationError):
+        build(model_type, values)
+
+
+@pytest.mark.parametrize(
+    "invalid_identifier",
+    [
+        pytest.param(bytearray(b"company-1"), id="bytearray"),
+        pytest.param(123, id="int"),
+        pytest.param(True, id="bool"),
+        pytest.param(object(), id="object"),
+    ],
+)
+def test_identifier_rejects_representative_non_string_values(
+    invalid_identifier: object,
+) -> None:
+    values = company_values()
+    values["company_id"] = invalid_identifier
+
+    with pytest.raises(ValidationError):
+        CompanyProfile(**values)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize("invalid_version", [True, "1", 1.0, 0, -1])

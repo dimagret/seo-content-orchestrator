@@ -24,7 +24,9 @@ from seo_orchestrator.canonical import JsonValue, canonical_json
 from seo_orchestrator.errors import CanonicalizationError
 
 NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
-Identifier = Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9-]{1,63}$")]
+Identifier = Annotated[
+    str, StringConstraints(strict=True, pattern=r"^[a-z0-9][a-z0-9-]{1,63}$")
+]
 Sha256Hex = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 NonEmptyStrings = Annotated[tuple[NonEmptyStr, ...], Field(min_length=1)]
 StrictPositiveInt = Annotated[int, Field(strict=True, gt=0)]
