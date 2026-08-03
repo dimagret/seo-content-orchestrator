@@ -11,6 +11,7 @@ from seo_orchestrator.domain import (
     ExecutionSnapshot,
     SeoBrief,
 )
+from seo_orchestrator.domain import models as domain_models
 
 CREATED = datetime(2026, 8, 3, 10, 0, tzinfo=UTC)
 UPDATED = datetime(2026, 8, 3, 11, 0, tzinfo=UTC)
@@ -186,6 +187,58 @@ MODEL_IDENTIFIER_FIELDS = [
 ]
 
 
+MODEL_SCALAR_TEXT_FIELDS = [
+    *[
+        (CompanyProfile, company_values, field)
+        for field in (
+            "name",
+            "brand_summary",
+            "products_services_overview",
+            "commercial_model",
+            "pricing_overview",
+            "service_geography",
+            "tone_of_voice",
+            "reading_level",
+            "default_language",
+            "default_locale",
+        )
+    ],
+    *[
+        (BusinessDirection, direction_values, field)
+        for field in (
+            "name",
+            "category_context",
+            "prices_and_tariffs",
+            "default_language",
+            "default_locale",
+        )
+    ],
+    *[
+        (AudienceSegment, audience_values, field)
+        for field in (
+            "name",
+            "industry",
+            "company_or_customer_size",
+            "geography",
+            "budget_range",
+            "decision_cycle",
+        )
+    ],
+    *[
+        (SeoBrief, brief_values, field)
+        for field in (
+            "page_type",
+            "goal",
+            "target_language",
+            "locale",
+            "primary_keyword",
+            "current_page_context",
+            "output_sheet_target",
+        )
+    ],
+]
+
+
 MODEL_COLLECTION_FIELDS = [
     *[
         (CompanyProfile, company_values, field)
@@ -313,6 +366,29 @@ def test_identifier_rejects_representative_non_string_values(
 
     with pytest.raises(ValidationError):
         CompanyProfile(**values)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "invalid_text",
+    [
+        pytest.param(b"valid text", id="bytes"),
+        pytest.param(bytearray(b"valid text"), id="bytearray"),
+    ],
+)
+@pytest.mark.parametrize("model_type,values_factory,text_field", MODEL_SCALAR_TEXT_FIELDS)
+def test_every_scalar_text_field_rejects_bytes_like_input(
+    model_type: type[object],
+    values_factory: object,
+    text_field: str,
+    invalid_text: object,
+) -> None:
+    values = values_factory()  # type: ignore[operator]
+    if text_field == "current_page_context":
+        values["current_page_url"] = None
+    values[text_field] = invalid_text
+
+    with pytest.raises(ValidationError):
+        build(model_type, values)
 
 
 @pytest.mark.parametrize("invalid_version", [True, "1", 1.0, 0, -1])
@@ -474,6 +550,30 @@ def test_every_string_collection_accepts_only_list_or_tuple_input(
         build(model_type, values)
 
 
+@pytest.mark.parametrize(
+    "invalid_entry",
+    [
+        pytest.param(b"entry", id="bytes"),
+        pytest.param(bytearray(b"entry"), id="bytearray"),
+        pytest.param(123, id="int"),
+        pytest.param(True, id="bool"),
+        pytest.param(object(), id="object"),
+    ],
+)
+@pytest.mark.parametrize("model_type,values_factory,field", MODEL_COLLECTION_FIELDS)
+def test_every_string_collection_rejects_non_string_entries(
+    model_type: type[object],
+    values_factory: object,
+    field: str,
+    invalid_entry: object,
+) -> None:
+    values = values_factory()  # type: ignore[operator]
+    values[field] = [invalid_entry, "valid"]
+
+    with pytest.raises(ValidationError, match="entries must be strings"):
+        build(model_type, values)
+
+
 @pytest.mark.parametrize("input_type", [list, tuple])
 def test_competitor_urls_normalize_deduplicate_and_freeze_allowed_input_types(
     input_type: type[list[str]] | type[tuple[str, ...]],
@@ -497,6 +597,34 @@ def test_urls_are_normalized_and_competitors_are_deduplicated() -> None:
         "http://xn--bcher-kva.example/path?q=1",
     )
     assert brief.current_page_url == "http://example.com/current?draft=1"
+
+
+@pytest.mark.parametrize(
+    "invalid_url",
+    [
+        pytest.param(b"ftp://example.com/", id="bytes"),
+        pytest.param(bytearray(b"https://example.com/"), id="bytearray"),
+        pytest.param(123, id="int"),
+        pytest.param(True, id="bool"),
+        pytest.param(object(), id="object"),
+    ],
+)
+def test_current_page_url_rejects_non_string_input_before_url_validation(
+    invalid_url: object,
+) -> None:
+    values = brief_values() | {"current_page_url": invalid_url}
+
+    with pytest.raises(ValidationError, match="current_page_url must be a string"):
+        SeoBrief(**values)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "invalid_url",
+    [b"https://example.com/", bytearray(b"https://example.com/"), 123, True, object()],
+)
+def test_private_url_normalizer_rejects_non_string_input(invalid_url: object) -> None:
+    with pytest.raises(ValueError, match="URL must be a string"):
+        domain_models._normalize_url(invalid_url)
 
 
 def test_url_hosts_normalize_idna_ipv4_and_ipv6() -> None:
@@ -627,5 +755,12 @@ def test_compiled_context_rejects_tuples_anywhere(context: object) -> None:
 @pytest.mark.parametrize("snapshot_hash", ["A" * 64, "a" * 63, "g" * 64])
 def test_snapshot_hash_must_be_lowercase_sha256(snapshot_hash: str) -> None:
     values = snapshot_values() | {"snapshot_hash": snapshot_hash}
+    with pytest.raises(ValidationError):
+        ExecutionSnapshot(**values)  # type: ignore[arg-type]
+
+
+def test_snapshot_hash_rejects_bytes() -> None:
+    values = snapshot_values() | {"snapshot_hash": b"a" * 64}
+
     with pytest.raises(ValidationError):
         ExecutionSnapshot(**values)  # type: ignore[arg-type]

@@ -23,11 +23,13 @@ from pydantic import (
 from seo_orchestrator.canonical import JsonValue, canonical_json
 from seo_orchestrator.errors import CanonicalizationError
 
-NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
+NonEmptyStr = Annotated[str, StringConstraints(strict=True, min_length=1)]
 Identifier = Annotated[
     str, StringConstraints(strict=True, pattern=r"^[a-z0-9][a-z0-9-]{1,63}$")
 ]
-Sha256Hex = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
+Sha256Hex = Annotated[
+    str, StringConstraints(strict=True, pattern=r"^[0-9a-f]{64}$")
+]
 NonEmptyStrings = Annotated[tuple[NonEmptyStr, ...], Field(min_length=1)]
 StrictPositiveInt = Annotated[int, Field(strict=True, gt=0)]
 
@@ -65,7 +67,9 @@ _COLLECTION_FIELDS = {
 }
 
 
-def _normalize_url(value: str) -> str:
+def _normalize_url(value: object) -> str:
+    if not isinstance(value, str):
+        raise ValueError("URL must be a string")  # noqa: TRY004 - Controlled validation.
     if value != value.strip():
         raise ValueError("URL must not have leading or trailing whitespace")
     if not value:
@@ -154,7 +158,9 @@ class DomainModel(BaseModel):
         seen: set[str] = set()
         for item in value:
             if not isinstance(item, str):
-                return value
+                raise ValueError(  # noqa: TRY004 - Pydantic converts to ValidationError.
+                    f"{info.field_name} entries must be strings"
+                )
             normalized = item.strip()
             if not normalized:
                 raise ValueError(f"{info.field_name} entries must not be empty")
@@ -294,7 +300,9 @@ class SeoBrief(DomainModel):
         seen: set[str] = set()
         for item in value:
             if not isinstance(item, str):
-                return value
+                raise ValueError(  # noqa: TRY004 - Pydantic converts to ValidationError.
+                    "competitor_urls entries must be strings"
+                )
             normalized = _normalize_url(item)
             if normalized not in seen:
                 seen.add(normalized)
@@ -304,8 +312,12 @@ class SeoBrief(DomainModel):
     @field_validator("current_page_url", mode="before")
     @classmethod
     def normalize_current_page_url(cls, value: object) -> object:
-        if value is None or not isinstance(value, str):
-            return value
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError(  # noqa: TRY004 - Pydantic converts to ValidationError.
+                "current_page_url must be a string"
+            )
         return _normalize_url(value)
 
     @model_validator(mode="after")
