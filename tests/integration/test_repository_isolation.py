@@ -1,6 +1,9 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
+
+from seo_orchestrator.canonical import sha256_fingerprint
 from seo_orchestrator.db.connection import connect
 from seo_orchestrator.db.migrations import migrate
 from seo_orchestrator.db.repositories import (
@@ -131,6 +134,21 @@ def _brief(company_id: str, direction_id: str, audience_id: str) -> SeoBrief:
 
 
 def _snapshot(brief: SeoBrief) -> ExecutionSnapshot:
+    profile = _profile(brief.company_id, "Avtomalyar")
+    direction = _direction(brief.company_id, brief.direction_id)
+    audience = _audience(
+        brief.company_id,
+        brief.direction_id,
+        brief.audience_segment_id,
+    )
+    context = {
+        "schema_version": 1,
+        "company": profile.model_dump(mode="json"),
+        "direction": direction.model_dump(mode="json"),
+        "audience": audience.model_dump(mode="json"),
+        "brief": brief.model_dump(mode="json"),
+        "prompt_set_version": 1,
+    }
     return ExecutionSnapshot(
         snapshot_id=f"{brief.company_id}-snapshot",
         brief_id=brief.brief_id,
@@ -141,8 +159,8 @@ def _snapshot(brief: SeoBrief) -> ExecutionSnapshot:
         audience_segment_id=brief.audience_segment_id,
         audience_version=brief.audience_version,
         prompt_set_version=1,
-        compiled_context={"schema_version": 1, "company": brief.company_id},
-        snapshot_hash="a" * 64,
+        compiled_context=context,
+        snapshot_hash=sha256_fingerprint(context),
         created_at=NOW,
     )
 
@@ -196,7 +214,7 @@ def test_job_and_approval_repositories_round_trip_through_company_scope(
         job = JobRecord(
             job_id="avtomalyar-job",
             brief_id=brief.brief_id,
-            brief_fingerprint="b" * 64,
+            brief_fingerprint=sha256_fingerprint(brief.model_dump(mode="json")),
             snapshot_id=snapshot.snapshot_id,
             snapshot_hash=snapshot.snapshot_hash,
             company_id="avtomalyar",
@@ -222,7 +240,7 @@ def test_job_and_approval_repositories_round_trip_through_company_scope(
             snapshot_hash=snapshot.snapshot_hash,
             plan_fingerprint="c" * 64,
             approved_by="invented-approver",
-            approved_at=NOW.isoformat(),
+            approved_at=NOW,
             expires_at=None,
         )
 
@@ -321,5 +339,187 @@ def test_scoped_lookup_query_plans_use_expected_composite_indexes(tmp_path: Path
         }
         for lookup, index_name in expected_indexes.items():
             assert any(index_name in str(row[3]) for row in plans[lookup]), plans[lookup]
+    finally:
+        conn.close()
+
+
+def _persist_typed_approval(
+    database_path: Path,
+    *,
+    approved_at: datetime = NOW,
+    expires_at: datetime | None = None,
+) -> ApprovalRecord:
+    conn = connect(database_path)
+    try:
+        migrate(conn)
+        companies = CompanyRepository(conn)
+        companies.add_company("avtomalyar", NOW, NOW)
+        companies.add_profile(_profile("avtomalyar", "Avtomalyar"))
+        companies.add_direction(_direction("avtomalyar", "car-painting"))
+        companies.add_audience(
+            _audience("avtomalyar", "car-painting", "private-car-owners")
+        )
+        brief = _brief("avtomalyar", "car-painting", "private-car-owners")
+        snapshot = _snapshot(brief)
+        BriefRepository(conn).add_brief(brief)
+        SnapshotRepository(conn).add_snapshot(snapshot)
+        job = JobRecord(
+            job_id="avtomalyar-job",
+            brief_id=brief.brief_id,
+            brief_fingerprint=sha256_fingerprint(brief.model_dump(mode="json")),
+            snapshot_id=snapshot.snapshot_id,
+            snapshot_hash=snapshot.snapshot_hash,
+            company_id=brief.company_id,
+            direction_id=brief.direction_id,
+            audience_segment_id=brief.audience_segment_id,
+            state="PLANNED",
+            current_stage=None,
+            approved_plan_fingerprint=None,
+            approval_record_id=None,
+            attempt=1,
+            created_by=brief.created_by,
+            created_at=NOW.isoformat(),
+            started_at=None,
+            finished_at=None,
+            error_code=None,
+            error_summary=None,
+            artifact_manifest_path=None,
+        )
+        approval = ApprovalRecord(
+            approval_record_id="avtomalyar-approval",
+            job_id=job.job_id,
+            approval_type="paid_execution",
+            snapshot_hash=snapshot.snapshot_hash,
+            plan_fingerprint="c" * 64,
+            approved_by="invented-approver",
+            approved_at=approved_at,
+            expires_at=expires_at,
+        )
+        JobRepository(conn).add_job(job)
+        ApprovalRepository(conn).add_approval("avtomalyar", approval)
+        conn.commit()
+        return approval
+    finally:
+        conn.close()
+
+
+def test_task7_e_approval_record_rejects_naive_timestamp() -> None:
+    with pytest.raises((TypeError, ValueError), match="timezone-aware"):
+        ApprovalRecord(
+            approval_record_id="approval-one",
+            job_id="job-one",
+            approval_type="paid_execution",
+            snapshot_hash="a" * 64,
+            plan_fingerprint="b" * 64,
+            approved_by="actor-one",
+            approved_at=datetime(2026, 8, 4, 9, 30),  # noqa: DTZ001
+            expires_at=None,
+        )
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"approval_type": "invented_approval"},
+        {"snapshot_hash": "A" * 64},
+        {"plan_fingerprint": "not-a-sha256"},
+    ],
+)
+def test_task7_e_approval_record_rejects_invalid_enum_and_hashes(
+    changes: dict[str, str],
+) -> None:
+    values = {
+        "approval_record_id": "approval-one",
+        "job_id": "job-one",
+        "approval_type": "paid_execution",
+        "snapshot_hash": "a" * 64,
+        "plan_fingerprint": "b" * 64,
+        "approved_by": "actor-one",
+        "approved_at": NOW,
+        "expires_at": None,
+    }
+    values.update(changes)
+
+    with pytest.raises(ValueError):
+        ApprovalRecord(**values)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("expires_at", [NOW, NOW - timedelta(seconds=1)])
+def test_task7_e_approval_record_rejects_non_forward_expiry(
+    expires_at: datetime,
+) -> None:
+    with pytest.raises(ValueError):
+        ApprovalRecord(
+            approval_record_id="approval-one",
+            job_id="job-one",
+            approval_type="paid_execution",
+            snapshot_hash="a" * 64,
+            plan_fingerprint="b" * 64,
+            approved_by="actor-one",
+            approved_at=NOW,
+            expires_at=expires_at,
+        )
+
+
+def test_task7_e_approval_datetime_round_trip_is_exact_after_reopen(tmp_path: Path) -> None:
+    expires_at = datetime(2026, 8, 5, tzinfo=UTC)
+    expected = _persist_typed_approval(
+        tmp_path / "approval-round-trip.db", expires_at=expires_at
+    )
+
+    reopened = connect(tmp_path / "approval-round-trip.db")
+    try:
+        restored = ApprovalRepository(reopened).get_approval(
+            "avtomalyar", "avtomalyar-job", "avtomalyar-approval"
+        )
+
+        assert restored == expected
+        assert type(restored.approved_at) is datetime
+        assert type(restored.expires_at) is datetime
+        assert restored.approved_at.tzinfo is UTC
+        assert restored.expires_at is not None
+        assert restored.expires_at.tzinfo is UTC
+    finally:
+        reopened.close()
+
+
+@pytest.mark.parametrize(
+    "column,value",
+    [
+        ("approved_at", "not-a-timestamp"),
+        ("expires_at", "2026-08-05T00:00:00"),
+    ],
+)
+def test_task7_e_approval_repository_rejects_malformed_or_naive_stored_timestamp(
+    tmp_path: Path, column: str, value: str
+) -> None:
+    database_path = tmp_path / f"malformed-approval-{column}.db"
+    _persist_typed_approval(database_path)
+    conn = connect(database_path)
+    try:
+        stored = list(
+            conn.execute(
+                """SELECT job_id, approval_type, snapshot_hash, plan_fingerprint,
+                          approved_by, approved_at, expires_at
+                   FROM approval_records
+                   WHERE approval_record_id = 'avtomalyar-approval'"""
+            ).fetchone()
+        )
+        stored[{"approved_at": 5, "expires_at": 6}[column]] = value
+        conn.execute(
+            """INSERT INTO approval_records(
+                   approval_record_id, job_id, approval_type, snapshot_hash,
+                   plan_fingerprint, approved_by, approved_at, expires_at
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            ("malformed-approval", *stored),
+        )
+        conn.commit()
+
+        with pytest.raises(RuntimeError) as invalid:
+            ApprovalRepository(conn).get_approval(
+                "avtomalyar", "avtomalyar-job", "malformed-approval"
+            )
+
+        assert getattr(invalid.value, "code", None) == "DATA_INTEGRITY"
     finally:
         conn.close()

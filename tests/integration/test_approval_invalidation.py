@@ -4,7 +4,7 @@ import hashlib
 import json
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Barrier
 
@@ -13,10 +13,12 @@ import pytest
 from seo_orchestrator.canonical import JsonValue, canonical_json, sha256_fingerprint
 from seo_orchestrator.db.connection import connect
 from seo_orchestrator.db.migrations import migrate
+from seo_orchestrator.db.repositories import JobRecord, JobRepository
 from seo_orchestrator.domain import ApprovalRecord, ExecutionPlan, JobState, SeoJob
 from seo_orchestrator.domain.approvals import canonical_plan_bytes, fingerprint_plan
 from seo_orchestrator.errors import (
     ApprovalInvalid,
+    DataIntegrityError,
     InvalidTransition,
     NotFound,
     StateConflict,
@@ -55,6 +57,80 @@ def _seed_snapshot(
     actor_id: str = "actor-one",
     prompt_set_version: int = 1,
 ) -> tuple[str, dict[str, JsonValue]]:
+    timestamp = NOW.isoformat().replace("+00:00", "Z")
+    company_context: dict[str, JsonValue] = {
+        "company_id": company_id,
+        "company_profile_id": f"{company_id}-profile",
+        "company_profile_version": 1,
+        "name": "Example Company",
+        "brand_summary": "A test-only company profile",
+        "products_services_overview": "An invented service",
+        "commercial_model": "Fixed price",
+        "pricing_overview": "Published test prices",
+        "service_geography": "Test region",
+        "value_propositions": ["Predictable delivery"],
+        "proof_points": ["Documented test proof"],
+        "certifications": ["Test certification"],
+        "case_references": ["Test case"],
+        "tools_and_process": ["Documented process"],
+        "tone_of_voice": "Clear",
+        "positive_voice_examples": ["Direct and factual"],
+        "negative_voice_examples": ["Unsupported hype"],
+        "reading_level": "General",
+        "allowed_claims": ["Documented claims"],
+        "forbidden_claims": ["Guaranteed outcomes"],
+        "compliance_requirements": ["Use verified facts"],
+        "default_language": "en",
+        "default_locale": "en-US",
+        "created_at": timestamp,
+        "updated_at": timestamp,
+    }
+    direction_context: dict[str, JsonValue] = {
+        "company_id": company_id,
+        "company_profile_version": 1,
+        "direction_id": direction_id,
+        "direction_version": 1,
+        "name": "Example Direction",
+        "offerings": ["Invented offering"],
+        "category_context": "Test category",
+        "prices_and_tariffs": "Fixed test tariff",
+        "direction_value_propositions": ["Auditable workflow"],
+        "direction_proof_points": ["Test evidence"],
+        "direction_cases": ["Test direction case"],
+        "internal_link_catalog": ["/example"],
+        "default_page_structure": ["Overview"],
+        "default_language": "en",
+        "default_locale": "en-US",
+        "allowed_claims": ["Verified claim"],
+        "forbidden_claims": ["Guaranteed result"],
+        "created_at": timestamp,
+        "updated_at": timestamp,
+    }
+    audience_context: dict[str, JsonValue] = {
+        "company_id": company_id,
+        "direction_id": direction_id,
+        "direction_version": 1,
+        "audience_segment_id": audience_id,
+        "audience_version": 1,
+        "name": "Example Audience",
+        "buyer_roles": ["Owner"],
+        "industry": "Test industry",
+        "company_or_customer_size": "Small",
+        "geography": "Test region",
+        "jobs_to_be_done": ["Evaluate an invented service"],
+        "pains_and_risks": ["Unclear scope"],
+        "objections": ["Insufficient evidence"],
+        "objection_responses": ["Show documented evidence"],
+        "selection_criteria": ["Transparent process"],
+        "minimum_expectations": ["Clear deliverable"],
+        "purchase_triggers": ["Need for a controlled test"],
+        "budget_range": "Test budget",
+        "decision_cycle": "One week",
+        "decision_participants": ["Owner"],
+        "preferred_content_formats": ["Service page"],
+        "created_at": timestamp,
+        "updated_at": timestamp,
+    }
     if conn.execute(
         "SELECT 1 FROM companies WHERE company_id = ?", (company_id,)
     ).fetchone() is None:
@@ -67,14 +143,26 @@ def _seed_snapshot(
                    company_id, version, company_profile_id, profile_json,
                    created_at, updated_at
                ) VALUES (?, 1, ?, ?, ?, ?)""",
-            (company_id, f"{company_id}-profile", "{}", NOW.isoformat(), NOW.isoformat()),
+            (
+                company_id,
+                f"{company_id}-profile",
+                canonical_json(company_context),
+                NOW.isoformat(),
+                NOW.isoformat(),
+            ),
         )
         conn.execute(
             """INSERT INTO business_direction_versions(
                    company_id, direction_id, version, company_profile_version,
                    direction_json, created_at, updated_at
                ) VALUES (?, ?, 1, 1, ?, ?, ?)""",
-            (company_id, direction_id, "{}", NOW.isoformat(), NOW.isoformat()),
+            (
+                company_id,
+                direction_id,
+                canonical_json(direction_context),
+                NOW.isoformat(),
+                NOW.isoformat(),
+            ),
         )
         conn.execute(
             """INSERT INTO audience_segment_versions(
@@ -85,7 +173,7 @@ def _seed_snapshot(
                 company_id,
                 direction_id,
                 audience_id,
-                "{}",
+                canonical_json(audience_context),
                 NOW.isoformat(),
                 NOW.isoformat(),
             ),
@@ -112,8 +200,8 @@ def _seed_snapshot(
         "current_page_context": "Invented current-page context",
         "output_sheet_target": None,
         "created_by": actor_id,
-        "created_at": NOW.isoformat().replace("+00:00", "Z"),
-        "updated_at": NOW.isoformat().replace("+00:00", "Z"),
+        "created_at": timestamp,
+        "updated_at": timestamp,
     }
     conn.execute(
         """INSERT INTO brief_drafts(
@@ -134,9 +222,9 @@ def _seed_snapshot(
     )
     context: dict[str, JsonValue] = {
         "schema_version": 1,
-        "company": {"company_id": company_id, "company_profile_version": 1},
-        "direction": {"direction_id": direction_id, "direction_version": 1},
-        "audience": {"audience_segment_id": audience_id, "audience_version": 1},
+        "company": company_context,
+        "direction": direction_context,
+        "audience": audience_context,
         "brief": brief,
         "prompt_set_version": prompt_set_version,
     }
@@ -259,15 +347,12 @@ def test_plan_job_hides_foreign_and_missing_snapshot_with_identical_error(
         conn.close()
 
 
-SERVICE_ALLOWED_EDGES = (
+SERVICE_GENERIC_EDGES = (
     (JobState.DRAFT, JobState.VALIDATED),
     (JobState.VALIDATED, JobState.PLANNED),
     (JobState.PLANNED, JobState.AWAITING_PAID_APPROVAL),
-    (JobState.AWAITING_PAID_APPROVAL, JobState.QUEUED),
-    (JobState.QUEUED, JobState.RUNNING),
     (JobState.RUNNING, JobState.SUCCEEDED),
     (JobState.SUCCEEDED, JobState.AWAITING_EXPORT_APPROVAL),
-    (JobState.AWAITING_EXPORT_APPROVAL, JobState.EXPORTED),
     (JobState.QUEUED, JobState.FAILED_RETRYABLE),
     (JobState.RUNNING, JobState.FAILED_RETRYABLE),
     (JobState.FAILED_RETRYABLE, JobState.QUEUED),
@@ -281,6 +366,7 @@ def _force_job_state(
     conn: sqlite3.Connection,
     state: JobState,
     *,
+    job_id: str = "job-one",
     attempt: int = 1,
     started_at: str | None = None,
     finished_at: str | None = None,
@@ -299,20 +385,27 @@ def _force_job_state(
             finished_at,
             error_code,
             error_summary,
-            "job-one",
+            job_id,
         ),
     )
     conn.commit()
 
 
-@pytest.mark.parametrize("source,target", SERVICE_ALLOWED_EDGES)
-def test_transition_applies_each_allowed_edge_once_and_only_retry_requeues_increment_attempt(
+@pytest.mark.parametrize("source,target", SERVICE_GENERIC_EDGES)
+def test_transition_applies_each_generic_edge_once_and_only_retry_requeues_increment_attempt(
     tmp_path: Path, source: JobState, target: JobState
 ) -> None:
     conn, _, _ = _open_seeded(tmp_path / f"edge-{source}-{target}.db")
     try:
         service = _job_service(conn)
         service.plan_job("snapshot-one", _plan())
+        if target in {JobState.SUCCEEDED, JobState.AWAITING_EXPORT_APPROVAL}:
+            _force_job_state(conn, JobState.AWAITING_PAID_APPROVAL, attempt=4)
+            _bind_persisted_paid_approval(
+                conn,
+                approved_at=NOW,
+                expires_at=None,
+            )
         _force_job_state(conn, source, attempt=4)
 
         result = service.transition("job-one", source, target, "test edge")
@@ -586,6 +679,125 @@ def test_approve_job_atomically_binds_one_paid_approval_and_queues_job(
         conn.close()
 
 
+@pytest.mark.parametrize("actor_id", ["", "   "])
+def test_approve_job_rejects_blank_actor_without_mutation(
+    tmp_path: Path,
+    actor_id: str,
+) -> None:
+    conn, snapshot_hash, _ = _open_seeded(tmp_path / f"blank-actor-{len(actor_id)}.db")
+    try:
+        _, plan_fingerprint = _prepare_awaiting_job(conn)
+
+        with pytest.raises(ApprovalInvalid) as invalid:
+            _approval_service(conn).approve_job(
+                "job-one", actor_id, snapshot_hash, plan_fingerprint
+            )
+
+        assert invalid.value.code == "APPROVAL_INVALID"
+        _assert_unapproved(conn)
+    finally:
+        conn.close()
+
+
+def _bind_persisted_paid_approval(
+    conn: sqlite3.Connection,
+    *,
+    approved_at: datetime,
+    expires_at: datetime | None,
+) -> None:
+    plan_fingerprint = fingerprint_plan(_plan())
+    snapshot_hash = conn.execute(
+        "SELECT snapshot_hash FROM jobs WHERE job_id = 'job-one'"
+    ).fetchone()[0]
+    conn.execute(
+        """INSERT INTO approval_records(
+               approval_record_id, job_id, approval_type, snapshot_hash,
+               plan_fingerprint, approved_by, approved_at, expires_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            "temporal-approval",
+            "job-one",
+            "paid_execution",
+            snapshot_hash,
+            plan_fingerprint,
+            "approver-one",
+            approved_at.isoformat(),
+            expires_at.isoformat() if expires_at is not None else None,
+        ),
+    )
+    conn.execute(
+        """UPDATE jobs
+           SET state = 'QUEUED', approved_plan_fingerprint = ?, approval_record_id = ?
+           WHERE job_id = 'job-one'""",
+        (plan_fingerprint, "temporal-approval"),
+    )
+    conn.commit()
+
+
+@pytest.mark.parametrize(
+    ("approved_at", "expires_at"),
+    [
+        (NOW + timedelta(seconds=1), None),
+        (NOW - timedelta(seconds=2), NOW - timedelta(seconds=1)),
+    ],
+)
+def test_running_rejects_temporally_invalid_paid_approval(
+    tmp_path: Path,
+    approved_at: datetime,
+    expires_at: datetime | None,
+) -> None:
+    conn, _, _ = _open_seeded(tmp_path / "temporal-approval.db")
+    try:
+        _prepare_awaiting_job(conn)
+        _bind_persisted_paid_approval(
+            conn,
+            approved_at=approved_at,
+            expires_at=expires_at,
+        )
+
+        with pytest.raises(ApprovalInvalid) as invalid:
+            _job_service(conn).transition(
+                "job-one", JobState.QUEUED, JobState.RUNNING, "paid execution"
+            )
+
+        assert invalid.value.code == "APPROVAL_INVALID"
+        assert conn.execute(
+            "SELECT state FROM jobs WHERE job_id = 'job-one'"
+        ).fetchone() == ("QUEUED",)
+        assert not conn.in_transaction
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "UPDATE approval_records SET approved_by = 'rogue-actor'",
+        "DELETE FROM approval_records",
+    ],
+)
+def test_paid_approval_evidence_is_append_only(
+    tmp_path: Path,
+    statement: str,
+) -> None:
+    conn, snapshot_hash, _ = _open_seeded(tmp_path / "approval-append-only.db")
+    try:
+        _, plan_fingerprint = _prepare_awaiting_job(conn)
+        _approval_service(conn).approve_job(
+            "job-one", "approver-one", snapshot_hash, plan_fingerprint
+        )
+
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(statement)
+        conn.rollback()
+
+        assert conn.execute(
+            "SELECT approved_by FROM approval_records"
+        ).fetchone() == ("approver-one",)
+    finally:
+        conn.close()
+
+
 PLAN_INVALIDATIONS = (
     pytest.param(_plan(pipeline_version="pipeline-v2"), id="pipeline-version"),
     pytest.param(_plan(executor_name="worker-v2"), id="executor"),
@@ -705,44 +917,44 @@ def test_prompt_set_change_via_new_snapshot_invalidates_approval(tmp_path: Path)
 
 
 @pytest.mark.parametrize("tamper", ["missing-plan", "fingerprint", "noncanonical-bytes"])
-def test_approval_fails_closed_for_legacy_or_tampered_durable_plan(
+def test_execution_plan_storage_rejects_post_planning_tamper(
     tmp_path: Path, tamper: str
 ) -> None:
-    conn, snapshot_hash, _ = _open_seeded(tmp_path / f"approval-tamper-{tamper}.db")
+    conn, _, _ = _open_seeded(tmp_path / f"approval-tamper-{tamper}.db")
     try:
-        _, submitted_fingerprint = _prepare_awaiting_job(conn)
-        if tamper == "missing-plan":
-            conn.execute(
-                """UPDATE jobs SET plan_json = NULL, plan_fingerprint = NULL
-                   WHERE job_id = ?""",
-                ("job-one",),
-            )
-        elif tamper == "fingerprint":
-            submitted_fingerprint = "0" * 64
-            conn.execute(
-                "UPDATE jobs SET plan_fingerprint = ? WHERE job_id = ?",
-                (submitted_fingerprint, "job-one"),
-            )
-        else:
-            payload = canonical_plan_bytes(_plan())
-            tampered_payload = b"\n" + payload
-            submitted_fingerprint = hashlib.sha256(tampered_payload).hexdigest()
-            conn.execute(
-                """UPDATE jobs SET plan_json = ?, plan_fingerprint = ?
-                   WHERE job_id = ?""",
-                (tampered_payload, submitted_fingerprint, "job-one"),
-            )
-        conn.commit()
+        _prepare_awaiting_job(conn)
+        original = conn.execute(
+            "SELECT plan_json, plan_fingerprint FROM jobs WHERE job_id = 'job-one'"
+        ).fetchone()
+        with pytest.raises(sqlite3.IntegrityError):
+            if tamper == "missing-plan":
+                conn.execute(
+                    """UPDATE jobs SET plan_json = NULL, plan_fingerprint = NULL
+                       WHERE job_id = ?""",
+                    ("job-one",),
+                )
+            elif tamper == "fingerprint":
+                conn.execute(
+                    "UPDATE jobs SET plan_fingerprint = ? WHERE job_id = ?",
+                    ("0" * 64, "job-one"),
+                )
+            else:
+                payload = canonical_plan_bytes(_plan())
+                tampered_payload = b"\n" + payload
+                conn.execute(
+                    """UPDATE jobs SET plan_json = ?, plan_fingerprint = ?
+                       WHERE job_id = ?""",
+                    (
+                        tampered_payload,
+                        hashlib.sha256(tampered_payload).hexdigest(),
+                        "job-one",
+                    ),
+                )
+        conn.rollback()
 
-        with pytest.raises(ApprovalInvalid) as invalid:
-            _approval_service(conn).approve_job(
-                "job-one",
-                "approver-one",
-                snapshot_hash,
-                submitted_fingerprint,
-            )
-
-        assert invalid.value.code == "APPROVAL_INVALID"
+        assert conn.execute(
+            "SELECT plan_json, plan_fingerprint FROM jobs WHERE job_id = 'job-one'"
+        ).fetchone() == original
         _assert_unapproved(conn)
     finally:
         conn.close()
@@ -900,3 +1112,874 @@ def test_concurrent_approval_creates_one_record_and_one_unambiguous_binding(
         ).fetchone() == (1,)
     finally:
         verification.close()
+
+
+def _assert_data_integrity(error: pytest.ExceptionInfo[RuntimeError]) -> None:
+    assert getattr(error.value, "code", None) == "DATA_INTEGRITY"
+
+
+@pytest.mark.parametrize(
+    "source,target",
+    [
+        (JobState.AWAITING_PAID_APPROVAL, JobState.QUEUED),
+        (JobState.AWAITING_EXPORT_APPROVAL, JobState.EXPORTED),
+    ],
+)
+def test_task7_a_generic_transition_reserves_approval_gates_without_mutation(
+    tmp_path: Path, source: JobState, target: JobState
+) -> None:
+    conn, _, _ = _open_seeded(tmp_path / f"reserved-gate-{source}.db")
+    try:
+        service = _job_service(conn)
+        service.plan_job("snapshot-one", _plan())
+        _force_job_state(conn, source)
+        before = conn.execute(
+            "SELECT state, approved_plan_fingerprint, approval_record_id FROM jobs"
+        ).fetchone()
+        audit_before = conn.execute("SELECT COUNT(*) FROM job_transitions").fetchone()
+
+        with pytest.raises(InvalidTransition) as invalid:
+            service.transition("job-one", source, target, "raw gated edge")
+
+        assert invalid.value.code == "INVALID_TRANSITION"
+        assert conn.execute(
+            "SELECT state, approved_plan_fingerprint, approval_record_id FROM jobs"
+        ).fetchone() == before
+        assert conn.execute("SELECT COUNT(*) FROM job_transitions").fetchone() == audit_before
+        assert conn.execute("SELECT COUNT(*) FROM approval_records").fetchone() == (0,)
+        assert not conn.in_transaction
+    finally:
+        conn.close()
+
+
+def test_task7_a_queued_job_without_persisted_paid_approval_cannot_start(
+    tmp_path: Path,
+) -> None:
+    conn, _, _ = _open_seeded(tmp_path / "run-without-approval.db")
+    try:
+        service = _job_service(conn)
+        service.plan_job("snapshot-one", _plan())
+        _force_job_state(conn, JobState.QUEUED)
+        audit_before = conn.execute("SELECT COUNT(*) FROM job_transitions").fetchone()
+
+        with pytest.raises(RuntimeError) as invalid:
+            service.transition(
+                "job-one", JobState.QUEUED, JobState.RUNNING, "start paid execution"
+            )
+
+        _assert_data_integrity(invalid)
+        assert conn.execute("SELECT state, started_at FROM jobs").fetchone() == (
+            "QUEUED",
+            None,
+        )
+        assert conn.execute("SELECT COUNT(*) FROM job_transitions").fetchone() == audit_before
+    finally:
+        conn.close()
+
+
+def test_task7_a_paid_approval_is_the_successful_path_to_running(tmp_path: Path) -> None:
+    conn, snapshot_hash, _ = _open_seeded(tmp_path / "approved-run.db")
+    try:
+        _, plan_fingerprint = _prepare_awaiting_job(conn)
+        _approval_service(conn).approve_job(
+            "job-one", "approver-one", snapshot_hash, plan_fingerprint
+        )
+
+        running = _job_service(conn).transition(
+            "job-one", JobState.QUEUED, JobState.RUNNING, "start paid execution"
+        )
+
+        assert running.state is JobState.RUNNING
+        assert running.approval_record_id == "approval-one"
+        assert running.approved_plan_fingerprint == plan_fingerprint
+        assert conn.execute("SELECT COUNT(*) FROM approval_records").fetchone() == (1,)
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize(
+    "tamper_sql,parameters",
+    [
+        ("UPDATE approval_records SET approval_type = 'sheet_export'", ()),
+        ("UPDATE approval_records SET snapshot_hash = ?", ("f" * 64,)),
+        ("UPDATE approval_records SET plan_fingerprint = ?", ("f" * 64,)),
+        ("UPDATE approval_records SET approved_at = 'malformed'", ()),
+        ("UPDATE approval_records SET approved_by = ''", ()),
+        ("UPDATE approval_records SET approved_by = '   '", ()),
+    ],
+)
+def test_task7_a_approval_record_storage_rejects_binding_tamper(
+    tmp_path: Path, tamper_sql: str, parameters: tuple[str, ...]
+) -> None:
+    digest = hashlib.sha256(tamper_sql.encode()).hexdigest()
+    conn, snapshot_hash, _ = _open_seeded(tmp_path / f"approval-storage-{digest}.db")
+    try:
+        _, plan_fingerprint = _prepare_awaiting_job(conn)
+        _approval_service(conn).approve_job(
+            "job-one", "approver-one", snapshot_hash, plan_fingerprint
+        )
+        original = conn.execute("SELECT * FROM approval_records").fetchone()
+
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(tamper_sql, parameters)
+        conn.rollback()
+
+        assert conn.execute("SELECT * FROM approval_records").fetchone() == original
+        assert conn.execute("SELECT state FROM jobs").fetchone() == ("QUEUED",)
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize(
+    "tamper_sql,parameters",
+    [
+        ("UPDATE jobs SET approved_plan_fingerprint = ?", ("f" * 64,)),
+        ("UPDATE jobs SET approval_record_id = 'missing-approval'", ()),
+    ],
+)
+def test_task7_a_running_revalidates_complete_paid_approval_binding(
+    tmp_path: Path, tamper_sql: str, parameters: tuple[str, ...]
+) -> None:
+    digest = hashlib.sha256(tamper_sql.encode()).hexdigest()
+    conn, snapshot_hash, _ = _open_seeded(tmp_path / f"run-binding-{digest}.db")
+    try:
+        _, plan_fingerprint = _prepare_awaiting_job(conn)
+        _approval_service(conn).approve_job(
+            "job-one", "approver-one", snapshot_hash, plan_fingerprint
+        )
+        conn.execute("DROP TRIGGER jobs_approval_binding_write_once")
+        conn.execute(tamper_sql, parameters)
+        conn.commit()
+        audit_before = conn.execute("SELECT COUNT(*) FROM job_transitions").fetchone()
+
+        with pytest.raises(RuntimeError) as invalid:
+            _job_service(conn).transition(
+                "job-one", JobState.QUEUED, JobState.RUNNING, "start tampered job"
+            )
+
+        _assert_data_integrity(invalid)
+        assert conn.execute("SELECT state, started_at FROM jobs").fetchone() == (
+            "QUEUED",
+            None,
+        )
+        assert conn.execute("SELECT COUNT(*) FROM job_transitions").fetchone() == audit_before
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize(
+    "old_state",
+    [
+        JobState.DRAFT,
+        JobState.VALIDATED,
+        JobState.PLANNED,
+        JobState.AWAITING_PAID_APPROVAL,
+    ],
+)
+def test_task7_b_replan_supersedes_every_same_company_pending_variant(
+    tmp_path: Path, old_state: JobState
+) -> None:
+    conn, snapshot_hash, _ = _open_seeded(tmp_path / f"replan-{old_state}.db")
+    try:
+        first_service = _job_service(conn)
+        first_service.plan_job("snapshot-one", _plan())
+        _force_job_state(conn, old_state)
+        _seed_snapshot(
+            conn,
+            brief_id="brief-two",
+            snapshot_id="snapshot-two",
+            actor_id="actor-one",
+        )
+        conn.commit()
+
+        replacement = _job_service(conn, job_id="job-two").plan_job(
+            "snapshot-two", _plan(pipeline_version="pipeline-v2")
+        )
+
+        assert replacement.job_id == "job-two"
+        assert conn.execute(
+            "SELECT superseded_by_job_id FROM jobs WHERE job_id = 'job-one'"
+        ).fetchone() == ("job-two",)
+        assert conn.execute(
+            "SELECT superseded_by_job_id FROM jobs WHERE job_id = 'job-two'"
+        ).fetchone() == (None,)
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "UPDATE jobs SET superseded_by_job_id = NULL WHERE job_id = 'job-one'"
+            )
+        conn.rollback()
+        assert conn.execute(
+            "SELECT superseded_by_job_id FROM jobs WHERE job_id = 'job-one'"
+        ).fetchone() == ("job-two",)
+        with pytest.raises(StateConflict):
+            first_service.transition(
+                "job-one", old_state, JobState.CANCELED, "superseded job is read-only"
+            )
+        if old_state is JobState.AWAITING_PAID_APPROVAL:
+            with pytest.raises(StateConflict):
+                _approval_service(conn).approve_job(
+                    "job-one", "approver-one", snapshot_hash, fingerprint_plan(_plan())
+                )
+        assert conn.execute("SELECT COUNT(*) FROM approval_records").fetchone() == (0,)
+    finally:
+        conn.close()
+
+
+def test_task7_b_global_paid_slot_conflict_is_typed_and_rolls_back_second_approval(
+    tmp_path: Path,
+) -> None:
+    conn, first_hash, _ = _open_seeded(tmp_path / "global-slot.db")
+    try:
+        first_plan = _job_service(conn).plan_job("snapshot-one", _plan())
+        _job_service(conn).transition(
+            first_plan.job_id,
+            JobState.PLANNED,
+            JobState.AWAITING_PAID_APPROVAL,
+            "first approval",
+        )
+        second_hash, _ = _seed_snapshot(
+            conn,
+            company_id="company-two",
+            direction_id="direction-two",
+            audience_id="audience-two",
+            brief_id="brief-two",
+            snapshot_id="snapshot-two",
+            actor_id="actor-one",
+        )
+        conn.commit()
+        second_service = _job_service(conn, company_id="company-two", job_id="job-two")
+        second_plan = second_service.plan_job("snapshot-two", _plan())
+        second_service.transition(
+            second_plan.job_id,
+            JobState.PLANNED,
+            JobState.AWAITING_PAID_APPROVAL,
+            "second approval",
+        )
+        assert conn.execute(
+            "SELECT superseded_by_job_id FROM jobs WHERE job_id = 'job-one'"
+        ).fetchone() == (None,)
+
+        _approval_service(conn).approve_job(
+            "job-one", "approver-one", first_hash, first_plan.plan_fingerprint
+        )
+        audit_before = conn.execute("SELECT COUNT(*) FROM job_transitions").fetchone()
+        with pytest.raises(StateConflict) as conflict:
+            _approval_service(
+                conn, company_id="company-two", approval_id="approval-two"
+            ).approve_job(
+                "job-two", "approver-two", second_hash, second_plan.plan_fingerprint
+            )
+
+        assert conflict.value.code == "STATE_CONFLICT"
+        assert conn.execute(
+            "SELECT state, approval_record_id FROM jobs WHERE job_id = 'job-two'"
+        ).fetchone() == ("AWAITING_PAID_APPROVAL", None)
+        assert conn.execute(
+            "SELECT approval_record_id FROM approval_records ORDER BY approval_record_id"
+        ).fetchall() == [("approval-one",)]
+        assert conn.execute("SELECT COUNT(*) FROM job_transitions").fetchone() == audit_before
+        assert not conn.in_transaction
+    finally:
+        conn.close()
+
+
+def test_task7_b_active_slot_identity_cannot_be_mutated_after_planning(
+    tmp_path: Path,
+) -> None:
+    conn, first_hash, _ = _open_seeded(tmp_path / "immutable-slot-identity.db")
+    try:
+        first_plan = _job_service(conn).plan_job("snapshot-one", _plan())
+        _job_service(conn).transition(
+            first_plan.job_id,
+            JobState.PLANNED,
+            JobState.AWAITING_PAID_APPROVAL,
+            "paid approval",
+        )
+        _approval_service(conn).approve_job(
+            first_plan.job_id,
+            "approver-one",
+            first_hash,
+            first_plan.plan_fingerprint,
+        )
+        _job_service(conn).transition(
+            first_plan.job_id,
+            JobState.QUEUED,
+            JobState.RUNNING,
+            "start paid execution",
+        )
+
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "UPDATE jobs SET created_by = ? WHERE job_id = ?",
+                ("rogue-actor", first_plan.job_id),
+            )
+
+        assert conn.execute(
+            "SELECT state, created_by FROM jobs WHERE job_id = ?",
+            (first_plan.job_id,),
+        ).fetchone() == ("RUNNING", "actor-one")
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize("column", ["plan_json", "plan_fingerprint"])
+def test_task7_b_active_slot_plan_predicate_cannot_be_cleared(
+    tmp_path: Path,
+    column: str,
+) -> None:
+    conn, first_hash, _ = _open_seeded(tmp_path / f"immutable-slot-{column}.db")
+    try:
+        first_plan = _job_service(conn).plan_job("snapshot-one", _plan())
+        _job_service(conn).transition(
+            first_plan.job_id,
+            JobState.PLANNED,
+            JobState.AWAITING_PAID_APPROVAL,
+            "paid approval",
+        )
+        _approval_service(conn).approve_job(
+            first_plan.job_id,
+            "approver-one",
+            first_hash,
+            first_plan.plan_fingerprint,
+        )
+        statements = {
+            "plan_json": "UPDATE jobs SET plan_json = NULL WHERE job_id = ?",
+            "plan_fingerprint": (
+                "UPDATE jobs SET plan_fingerprint = NULL WHERE job_id = ?"
+            ),
+        }
+
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(statements[column], (first_plan.job_id,))
+
+        assert conn.execute(
+            "SELECT plan_json IS NOT NULL, plan_fingerprint IS NOT NULL "
+            "FROM jobs WHERE job_id = ?",
+            (first_plan.job_id,),
+        ).fetchone() == (1, 1)
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize("column", ["plan_json", "plan_fingerprint"])
+@pytest.mark.parametrize("awaiting_approval", [False, True])
+def test_task7_b_execution_plan_is_immutable_from_initial_planning(
+    tmp_path: Path,
+    column: str,
+    awaiting_approval: bool,
+) -> None:
+    conn, _, _ = _open_seeded(
+        tmp_path / f"immutable-plan-{column}-{awaiting_approval}.db"
+    )
+    try:
+        planned = _job_service(conn).plan_job("snapshot-one", _plan())
+        if awaiting_approval:
+            _job_service(conn).transition(
+                planned.job_id,
+                JobState.PLANNED,
+                JobState.AWAITING_PAID_APPROVAL,
+                "request paid approval",
+            )
+        statements = {
+            "plan_json": "UPDATE jobs SET plan_json = X'7B7D' WHERE job_id = ?",
+            "plan_fingerprint": (
+                "UPDATE jobs SET plan_fingerprint = '"
+                + ("f" * 64)
+                + "' WHERE job_id = ?"
+            ),
+        }
+
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(statements[column], (planned.job_id,))
+        conn.rollback()
+
+        assert conn.execute(
+            "SELECT plan_fingerprint FROM jobs WHERE job_id = ?",
+            (planned.job_id,),
+        ).fetchone() == (planned.plan_fingerprint,)
+    finally:
+        conn.close()
+
+
+def test_task7_e_malformed_job_timestamp_is_typed_data_integrity(
+    tmp_path: Path,
+) -> None:
+    conn, _, _ = _open_seeded(tmp_path / "malformed-job-timestamp.db")
+    try:
+        _job_service(conn).plan_job("snapshot-one", _plan())
+        conn.execute("DROP TRIGGER jobs_execution_provenance_immutable")
+        conn.execute("UPDATE jobs SET created_at = 'not-a-timestamp'")
+        conn.commit()
+
+        with pytest.raises(DataIntegrityError) as invalid:
+            _job_service(conn).transition(
+                "job-one",
+                JobState.PLANNED,
+                JobState.AWAITING_PAID_APPROVAL,
+                "request paid approval",
+            )
+
+        assert invalid.value.code == "DATA_INTEGRITY"
+        assert conn.execute("SELECT state FROM jobs").fetchone() == ("PLANNED",)
+        assert not conn.in_transaction
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize(
+    "column,value",
+    [
+        ("snapshot_hash", "f" * 64),
+        ("brief_fingerprint", "f" * 64),
+        ("created_at", "2027-01-01T00:00:00+00:00"),
+    ],
+)
+def test_task7_b_job_execution_provenance_is_immutable_after_planning(
+    tmp_path: Path,
+    column: str,
+    value: str,
+) -> None:
+    conn, _, _ = _open_seeded(tmp_path / f"immutable-job-provenance-{column}.db")
+    try:
+        _job_service(conn).plan_job("snapshot-one", _plan())
+        select_sql = {
+            "snapshot_hash": "SELECT snapshot_hash FROM jobs WHERE job_id = ?",
+            "brief_fingerprint": "SELECT brief_fingerprint FROM jobs WHERE job_id = ?",
+            "created_at": "SELECT created_at FROM jobs WHERE job_id = ?",
+        }[column]
+        update_sql = {
+            "snapshot_hash": "UPDATE jobs SET snapshot_hash = ? WHERE job_id = ?",
+            "brief_fingerprint": "UPDATE jobs SET brief_fingerprint = ? WHERE job_id = ?",
+            "created_at": "UPDATE jobs SET created_at = ? WHERE job_id = ?",
+        }[column]
+        original = conn.execute(select_sql, ("job-one",)).fetchone()
+
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(update_sql, (value, "job-one"))
+        conn.rollback()
+
+        assert conn.execute(select_sql, ("job-one",)).fetchone() == original
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "UPDATE jobs SET approved_plan_fingerprint = NULL WHERE job_id = 'job-one'",
+        "UPDATE jobs SET approval_record_id = 'replacement' WHERE job_id = 'job-one'",
+    ],
+)
+def test_task7_a_paid_approval_binding_is_write_once(
+    tmp_path: Path,
+    statement: str,
+) -> None:
+    conn, snapshot_hash, _ = _open_seeded(tmp_path / "immutable-job-approval.db")
+    try:
+        _, plan_fingerprint = _prepare_awaiting_job(conn)
+        _approval_service(conn).approve_job(
+            "job-one", "approver-one", snapshot_hash, plan_fingerprint
+        )
+        original = conn.execute(
+            """SELECT approved_plan_fingerprint, approval_record_id
+               FROM jobs WHERE job_id = 'job-one'"""
+        ).fetchone()
+
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(statement)
+        conn.rollback()
+
+        assert conn.execute(
+            """SELECT approved_plan_fingerprint, approval_record_id
+               FROM jobs WHERE job_id = 'job-one'"""
+        ).fetchone() == original
+    finally:
+        conn.close()
+
+
+def test_task7_e_malformed_job_attempt_is_typed_data_integrity(tmp_path: Path) -> None:
+    conn, _, _ = _open_seeded(tmp_path / "malformed-job-attempt.db")
+    try:
+        _job_service(conn).plan_job("snapshot-one", _plan())
+        conn.execute("UPDATE jobs SET attempt = 'not-an-integer'")
+        conn.commit()
+
+        with pytest.raises(DataIntegrityError) as invalid:
+            _job_service(conn).transition(
+                "job-one",
+                JobState.PLANNED,
+                JobState.AWAITING_PAID_APPROVAL,
+                "request paid approval",
+            )
+
+        assert invalid.value.code == "DATA_INTEGRITY"
+        assert conn.execute("SELECT state FROM jobs").fetchone() == ("PLANNED",)
+        assert not conn.in_transaction
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "UPDATE job_transitions SET reason_summary = 'rewritten'",
+        "DELETE FROM job_transitions",
+    ],
+)
+def test_task7_b_transition_audit_is_append_only(
+    tmp_path: Path,
+    statement: str,
+) -> None:
+    conn, _, _ = _open_seeded(tmp_path / "immutable-transition-audit.db")
+    try:
+        _job_service(conn).plan_job("snapshot-one", _plan())
+        original = conn.execute("SELECT * FROM job_transitions").fetchall()
+
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(statement)
+        conn.rollback()
+
+        assert conn.execute("SELECT * FROM job_transitions").fetchall() == original
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize(
+    "corruption",
+    ["snapshot-binding", "approval-deleted", "plan-rewritten"],
+)
+def test_task7_e_pre_v3_provenance_corruption_blocks_success_transition(
+    tmp_path: Path,
+    corruption: str,
+) -> None:
+    conn, snapshot_hash, _ = _open_seeded(tmp_path / f"legacy-{corruption}.db")
+    try:
+        _, plan_fingerprint = _prepare_awaiting_job(conn)
+        _approval_service(conn).approve_job(
+            "job-one", "approver-one", snapshot_hash, plan_fingerprint
+        )
+        _job_service(conn).transition(
+            "job-one", JobState.QUEUED, JobState.RUNNING, "start valid job"
+        )
+        audit_before = conn.execute("SELECT COUNT(*) FROM job_transitions").fetchone()
+
+        if corruption == "snapshot-binding":
+            conn.execute("DROP TRIGGER jobs_execution_provenance_immutable")
+            conn.execute("UPDATE jobs SET snapshot_hash = ?", ("f" * 64,))
+        elif corruption == "approval-deleted":
+            conn.execute("DROP TRIGGER approval_records_immutable_delete")
+            conn.execute("DELETE FROM approval_records")
+        else:
+            replacement_plan = _plan(pipeline_version="pipeline-v2")
+            replacement_payload = canonical_plan_bytes(replacement_plan)
+            conn.execute("DROP TRIGGER jobs_execution_plan_immutable")
+            conn.execute(
+                "UPDATE jobs SET plan_json = ?, plan_fingerprint = ?",
+                (replacement_payload, fingerprint_plan(replacement_plan)),
+            )
+        conn.commit()
+
+        with pytest.raises(DataIntegrityError) as invalid:
+            _job_service(conn).transition(
+                "job-one", JobState.RUNNING, JobState.SUCCEEDED, "finish corrupt job"
+            )
+
+        assert invalid.value.code == "DATA_INTEGRITY"
+        assert conn.execute("SELECT state FROM jobs").fetchone() == ("RUNNING",)
+        assert conn.execute("SELECT COUNT(*) FROM job_transitions").fetchone() == audit_before
+        assert not conn.in_transaction
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    [
+        "noncanonical-context",
+        "snapshot-hash",
+        "context-metadata",
+        "prompt-metadata",
+        "wrong-storage-type",
+        "extra-top-level",
+        "nested-source-divergence",
+        "boolean-version-metadata",
+    ],
+)
+def test_task7_c_snapshot_storage_rejects_post_insert_tamper_without_job(
+    tmp_path: Path, tamper: str
+) -> None:
+    conn, _, _ = _open_seeded(tmp_path / f"snapshot-before-plan-{tamper}.db")
+    try:
+        row = conn.execute(
+            """SELECT compiled_context, snapshot_hash, prompt_set_version
+               FROM execution_snapshots WHERE snapshot_id = 'snapshot-one'"""
+        ).fetchone()
+        with pytest.raises(sqlite3.IntegrityError):
+            if tamper == "noncanonical-context":
+                conn.execute(
+                    "UPDATE execution_snapshots SET compiled_context = ?",
+                    (b"\n" + bytes(row[0]),),
+                )
+            elif tamper == "snapshot-hash":
+                conn.execute(
+                    "UPDATE execution_snapshots SET snapshot_hash = ?", ("f" * 64,)
+                )
+            elif tamper == "context-metadata":
+                context = json.loads(bytes(row[0]))
+                context["direction"]["direction_version"] = 2
+                conn.execute(
+                    "UPDATE execution_snapshots SET compiled_context = ?, snapshot_hash = ?",
+                    (canonical_json(context), sha256_fingerprint(context)),
+                )
+            elif tamper == "prompt-metadata":
+                conn.execute("UPDATE execution_snapshots SET prompt_set_version = 2")
+            elif tamper == "wrong-storage-type":
+                conn.execute("UPDATE execution_snapshots SET compiled_context = 123")
+            elif tamper == "extra-top-level":
+                context = json.loads(bytes(row[0]))
+                context["rogue"] = "not part of the frozen snapshot envelope"
+                conn.execute(
+                    "UPDATE execution_snapshots SET compiled_context = ?, snapshot_hash = ?",
+                    (canonical_json(context), sha256_fingerprint(context)),
+                )
+            elif tamper == "boolean-version-metadata":
+                context = json.loads(bytes(row[0]))
+                context["schema_version"] = True
+                context["company"]["company_profile_version"] = True
+                conn.execute(
+                    "UPDATE execution_snapshots SET compiled_context = ?, snapshot_hash = ?",
+                    (canonical_json(context), sha256_fingerprint(context)),
+                )
+            else:
+                context = json.loads(bytes(row[0]))
+                context["brief"]["rogue_nested"] = "not compiled from source"
+                conn.execute(
+                    "UPDATE execution_snapshots SET compiled_context = ?, snapshot_hash = ?",
+                    (canonical_json(context), sha256_fingerprint(context)),
+                )
+        conn.rollback()
+
+        assert conn.execute(
+            """SELECT compiled_context, snapshot_hash, prompt_set_version
+               FROM execution_snapshots WHERE snapshot_id = 'snapshot-one'"""
+        ).fetchone() == row
+        assert conn.execute("SELECT COUNT(*) FROM jobs").fetchone() == (0,)
+        assert conn.execute("SELECT COUNT(*) FROM job_transitions").fetchone() == (0,)
+        assert not conn.in_transaction
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize("corruption", ["rogue-nested-key", "boolean-version"])
+def test_task7_c_preexisting_snapshot_corruption_fails_strict_hydration(
+    tmp_path: Path,
+    corruption: str,
+) -> None:
+    conn, _, _ = _open_seeded(tmp_path / f"preexisting-corruption-{corruption}.db")
+    try:
+        conn.execute("DROP TRIGGER execution_snapshots_immutable_update")
+        row = conn.execute("SELECT compiled_context FROM execution_snapshots").fetchone()
+        context = json.loads(bytes(row[0]))
+        if corruption == "rogue-nested-key":
+            context["brief"]["rogue_nested"] = "pre-v3 corruption"
+        else:
+            context["schema_version"] = True
+            context["company"]["company_profile_version"] = True
+        conn.execute(
+            "UPDATE execution_snapshots SET compiled_context = ?, snapshot_hash = ?",
+            (canonical_json(context), sha256_fingerprint(context)),
+        )
+        conn.commit()
+
+        with pytest.raises(RuntimeError) as invalid:
+            _job_service(conn).plan_job("snapshot-one", _plan())
+
+        _assert_data_integrity(invalid)
+        assert conn.execute("SELECT COUNT(*) FROM jobs").fetchone() == (0,)
+        assert not conn.in_transaction
+    finally:
+        conn.close()
+
+
+def test_task7_c_snapshot_tamper_between_planning_and_approval_is_rejected(
+    tmp_path: Path,
+) -> None:
+    conn, snapshot_hash, _ = _open_seeded(tmp_path / "snapshot-before-approval.db")
+    try:
+        _, plan_fingerprint = _prepare_awaiting_job(conn)
+        row = conn.execute("SELECT compiled_context FROM execution_snapshots").fetchone()
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "UPDATE execution_snapshots SET compiled_context = ?",
+                (b"\n" + bytes(row[0]),),
+            )
+        conn.rollback()
+
+        approved = _approval_service(conn).approve_job(
+            "job-one", "approver-one", snapshot_hash, plan_fingerprint
+        )
+        assert approved.job_id == "job-one"
+        assert conn.execute("SELECT state FROM jobs").fetchone() == ("QUEUED",)
+    finally:
+        conn.close()
+
+
+def test_task7_c_snapshot_tamper_after_approval_is_rejected_before_running(
+    tmp_path: Path,
+) -> None:
+    conn, snapshot_hash, _ = _open_seeded(tmp_path / "snapshot-before-running.db")
+    try:
+        _, plan_fingerprint = _prepare_awaiting_job(conn)
+        _approval_service(conn).approve_job(
+            "job-one", "approver-one", snapshot_hash, plan_fingerprint
+        )
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute("UPDATE execution_snapshots SET prompt_set_version = 2")
+        conn.rollback()
+
+        running = _job_service(conn).transition(
+            "job-one", JobState.QUEUED, JobState.RUNNING, "start approved snapshot"
+        )
+
+        assert running.state is JobState.RUNNING
+        assert running.started_at == NOW
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("snapshot_hash", "f" * 64),
+        ("direction_id", "rogue-direction"),
+        ("audience_segment_id", "rogue-audience"),
+        ("created_by", "rogue-actor"),
+    ],
+)
+def test_task7_c_add_job_rejects_caller_metadata_inconsistent_with_snapshot(
+    tmp_path: Path, field: str, value: str
+) -> None:
+    conn, snapshot_hash, context = _open_seeded(tmp_path / f"rogue-job-{field}.db")
+    try:
+        values: dict[str, object] = {
+            "job_id": "rogue-job",
+            "brief_id": "brief-one",
+            "brief_fingerprint": sha256_fingerprint(context["brief"]),
+            "snapshot_id": "snapshot-one",
+            "snapshot_hash": snapshot_hash,
+            "company_id": "company-one",
+            "direction_id": "direction-one",
+            "audience_segment_id": "audience-one",
+            "state": JobState.PLANNED.value,
+            "current_stage": None,
+            "approved_plan_fingerprint": None,
+            "approval_record_id": None,
+            "attempt": 1,
+            "created_by": "actor-one",
+            "created_at": NOW.isoformat(),
+            "started_at": None,
+            "finished_at": None,
+            "error_code": None,
+            "error_summary": None,
+            "artifact_manifest_path": None,
+            "plan_json": canonical_plan_bytes(_plan()),
+            "plan_fingerprint": fingerprint_plan(_plan()),
+        }
+        values[field] = value
+
+        with pytest.raises(RuntimeError) as invalid:
+            JobRepository(conn).add_job(JobRecord(**values))  # type: ignore[arg-type]
+
+        _assert_data_integrity(invalid)
+        assert conn.execute("SELECT COUNT(*) FROM jobs").fetchone() == (0,)
+    finally:
+        conn.close()
+
+
+def test_task7_c_foreign_scope_gets_not_found_before_snapshot_integrity_disclosure(
+    tmp_path: Path,
+) -> None:
+    conn, _, _ = _open_seeded(tmp_path / "corrupt-snapshot-isolation.db")
+    try:
+        conn.execute("DROP TRIGGER execution_snapshots_immutable_update")
+        conn.execute("UPDATE execution_snapshots SET compiled_context = X'00'")
+        conn.commit()
+
+        with pytest.raises(NotFound, match="record not found"):
+            _job_service(conn, company_id="company-two").plan_job(
+                "snapshot-one", _plan()
+            )
+    finally:
+        conn.close()
+
+
+def test_task7_e_approval_rejects_empty_actor_without_mutation(tmp_path: Path) -> None:
+    conn, snapshot_hash, _ = _open_seeded(tmp_path / "empty-approval-actor.db")
+    try:
+        _, plan_fingerprint = _prepare_awaiting_job(conn)
+
+        with pytest.raises(ApprovalInvalid):
+            _approval_service(conn).approve_job(
+                "job-one", "", snapshot_hash, plan_fingerprint
+            )
+
+        _assert_unapproved(conn)
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    ["missing-json", "missing-fingerprint", "noncanonical-json", "hash-mismatch"],
+)
+def test_task7_e_plan_trigger_rejects_every_partial_or_invalid_mutation(
+    tmp_path: Path, tamper: str
+) -> None:
+    conn, _, _ = _open_seeded(tmp_path / f"transition-plan-integrity-{tamper}.db")
+    try:
+        _job_service(conn).plan_job("snapshot-one", _plan())
+        before = conn.execute("SELECT state, plan_json, plan_fingerprint FROM jobs").fetchone()
+
+        with pytest.raises(sqlite3.IntegrityError):
+            if tamper == "missing-json":
+                conn.execute("UPDATE jobs SET plan_json = NULL")
+            elif tamper == "missing-fingerprint":
+                conn.execute("UPDATE jobs SET plan_fingerprint = NULL")
+            elif tamper == "noncanonical-json":
+                payload = b"\n" + canonical_plan_bytes(_plan())
+                conn.execute(
+                    "UPDATE jobs SET plan_json = ?, plan_fingerprint = ?",
+                    (payload, hashlib.sha256(payload).hexdigest()),
+                )
+            else:
+                conn.execute("UPDATE jobs SET plan_fingerprint = ?", ("0" * 64,))
+        conn.rollback()
+
+        assert conn.execute("SELECT state, plan_json, plan_fingerprint FROM jobs").fetchone() == before
+        assert conn.execute("SELECT COUNT(*) FROM job_transitions").fetchone() == (1,)
+    finally:
+        conn.close()
+
+
+def test_task7_e_malformed_persisted_job_state_is_a_stable_integrity_error(
+    tmp_path: Path,
+) -> None:
+    conn, _, _ = _open_seeded(tmp_path / "malformed-job-state.db")
+    try:
+        _job_service(conn).plan_job("snapshot-one", _plan())
+        conn.execute("UPDATE jobs SET state = 'NOT_A_JOB_STATE'")
+        conn.commit()
+
+        with pytest.raises(RuntimeError) as invalid:
+            _job_service(conn).transition(
+                "job-one",
+                JobState.PLANNED,
+                JobState.AWAITING_PAID_APPROVAL,
+                "malformed persisted state",
+            )
+
+        _assert_data_integrity(invalid)
+        assert conn.execute("SELECT state FROM jobs").fetchone() == ("NOT_A_JOB_STATE",)
+        assert conn.execute("SELECT COUNT(*) FROM job_transitions").fetchone() == (1,)
+    finally:
+        conn.close()

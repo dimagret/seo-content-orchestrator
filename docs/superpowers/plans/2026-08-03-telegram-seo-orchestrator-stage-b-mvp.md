@@ -795,7 +795,10 @@ Use the exact state table from spec. Test every allowed edge and every forbidden
 
 - [ ] **Step 2: Write approval invalidation tests**
 
-Approval must fail if any of these differ: snapshot hash, prompt set, model plan, provider plan, maximum retries, destination, or cost envelope version.
+Approval must fail if any of these differ: snapshot hash, prompt set, model plan,
+provider plan, maximum retries, destination, or any represented cost-envelope
+field (`cost_currency`, `cost_min_decimal`, `cost_max_decimal`, or
+`unknown_cost_reasons`).
 
 - [ ] **Step 3: Verify RED**
 

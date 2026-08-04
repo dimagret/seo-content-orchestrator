@@ -45,6 +45,24 @@ class InvalidTransition(RuntimeError):
         super().__init__("job state transition is not allowed")
 
 
+class DataIntegrityError(RuntimeError):
+    """Raised when persisted state fails canonical or provenance verification."""
+
+    code = "DATA_INTEGRITY"
+
+    def __init__(self) -> None:
+        super().__init__("persisted data failed integrity verification")
+
+
+class MigrationError(RuntimeError):
+    """Raised when schema migration history is not a known contiguous prefix."""
+
+    code = "MIGRATION_INVALID"
+
+    def __init__(self) -> None:
+        super().__init__("database migration history is invalid")
+
+
 class ApprovalInvalid(RuntimeError):
     """Raised when submitted or durable approval fingerprints fail closed."""
 

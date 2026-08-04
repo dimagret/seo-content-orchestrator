@@ -6,6 +6,8 @@ from pathlib import Path
 from time import monotonic
 from typing import Any, cast
 
+import pytest
+
 from seo_orchestrator.db.connection import connect, transaction
 
 
@@ -156,3 +158,61 @@ def test_busy_timeout_waits_before_process_writer_fails(tmp_path: Path) -> None:
             holder.terminate()
     assert contender.exitcode == 0
     assert holder.exitcode == 0
+
+
+class _SimulatedCancellation(BaseException):
+    pass
+
+
+def test_transaction_rolls_back_cancellation_and_releases_connection(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "cancellation.db"
+    conn = connect(database_path)
+    try:
+        conn.execute("CREATE TABLE writes(value TEXT NOT NULL)")
+        conn.commit()
+
+        with pytest.raises(_SimulatedCancellation), transaction(conn):
+            conn.execute("INSERT INTO writes(value) VALUES ('partial')")
+            raise _SimulatedCancellation
+
+        assert not conn.in_transaction
+        assert conn.execute("SELECT value FROM writes").fetchall() == []
+        with transaction(conn):
+            conn.execute("INSERT INTO writes(value) VALUES ('reused')")
+        assert conn.execute("SELECT value FROM writes").fetchall() == [("reused",)]
+    finally:
+        conn.close()
+
+
+def test_transaction_rolls_back_commit_failure_and_releases_connection(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "commit-failure.db"
+    conn = connect(database_path)
+    try:
+        conn.executescript(
+            """
+            CREATE TABLE parents(parent_id INTEGER PRIMARY KEY);
+            CREATE TABLE children(
+                child_id INTEGER PRIMARY KEY,
+                parent_id INTEGER NOT NULL,
+                FOREIGN KEY(parent_id) REFERENCES parents(parent_id)
+                    DEFERRABLE INITIALLY DEFERRED
+            );
+            """
+        )
+        conn.commit()
+
+        with pytest.raises(sqlite3.IntegrityError), transaction(conn):
+            conn.execute("INSERT INTO children(child_id, parent_id) VALUES (1, 999)")
+
+        assert not conn.in_transaction
+        assert conn.execute("SELECT child_id FROM children").fetchall() == []
+        with transaction(conn):
+            conn.execute("INSERT INTO parents(parent_id) VALUES (999)")
+            conn.execute("INSERT INTO children(child_id, parent_id) VALUES (1, 999)")
+        assert conn.execute("SELECT child_id FROM children").fetchall() == [(1,)]
+    finally:
+        conn.close()

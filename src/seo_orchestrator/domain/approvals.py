@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import cast
 
 from seo_orchestrator.canonical import JsonValue, canonical_json
@@ -25,6 +25,8 @@ _PLAN_FIELDS = frozenset(
         "result_destination",
     }
 )
+_APPROVAL_TYPES = frozenset({"paid_execution", "sheet_export", "final_publication"})
+_LOWER_HEX = frozenset("0123456789abcdef")
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,6 +80,36 @@ class ApprovalRecord:
     approved_by: str
     approved_at: datetime
     expires_at: datetime | None
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "approval_record_id",
+            "job_id",
+            "approval_type",
+            "snapshot_hash",
+            "plan_fingerprint",
+            "approved_by",
+        ):
+            value = getattr(self, field_name)
+            if type(value) is not str or not value.strip():
+                raise ValueError(f"{field_name} must be a non-empty string")
+        if self.approval_type not in _APPROVAL_TYPES:
+            raise ValueError("approval_type is not supported")
+        for field_name in ("snapshot_hash", "plan_fingerprint"):
+            value = getattr(self, field_name)
+            if len(value) != 64 or any(character not in _LOWER_HEX for character in value):
+                raise ValueError(f"{field_name} must be a lowercase SHA-256")
+        for field_name in ("approved_at", "expires_at"):
+            value = getattr(self, field_name)
+            if value is None and field_name == "expires_at":
+                continue
+            if type(value) is not datetime:
+                raise ValueError(f"{field_name} must be a datetime")
+            if value.tzinfo is None or value.utcoffset() is None:
+                raise ValueError(f"{field_name} must be timezone-aware")
+            object.__setattr__(self, field_name, value.astimezone(UTC))
+        if self.expires_at is not None and self.expires_at <= self.approved_at:
+            raise ValueError("expires_at must be later than approved_at")
 
 
 def plan_mapping(plan: ExecutionPlan) -> dict[str, JsonValue]:

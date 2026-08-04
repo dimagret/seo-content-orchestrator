@@ -8,10 +8,10 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, cast
 
-from seo_orchestrator.canonical import canonical_json
+from seo_orchestrator.canonical import canonical_json, sha256_fingerprint
 from seo_orchestrator.domain import (
     ApprovalRecord,
     AudienceSegment,
@@ -20,17 +20,42 @@ from seo_orchestrator.domain import (
     ExecutionSnapshot,
     SeoBrief,
 )
-from seo_orchestrator.errors import CompanyArchived, NotFound
+from seo_orchestrator.errors import CompanyArchived, DataIntegrityError, NotFound
+
+_SNAPSHOT_CONTEXT_KEYS = frozenset(
+    {
+        "schema_version",
+        "company",
+        "direction",
+        "audience",
+        "brief",
+        "prompt_set_version",
+    }
+)
 
 
 def _storage_timestamp(value: object) -> str | None:
     if value is None:
         return None
-    if isinstance(value, datetime):
-        return value.isoformat()
-    if type(value) is str:
-        return value
-    raise TypeError("approval timestamp must be a datetime, string, or None")
+    if type(value) is not datetime:
+        raise TypeError("approval timestamp must be a datetime or None")
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("approval timestamp must be timezone-aware")
+    return value.astimezone(UTC).isoformat()
+
+
+def _domain_timestamp(value: object, *, optional: bool) -> datetime | None:
+    if value is None and optional:
+        return None
+    if type(value) is not str:
+        raise DataIntegrityError
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise DataIntegrityError from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise DataIntegrityError
+    return parsed.astimezone(UTC)
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +82,7 @@ class JobRecord:
     artifact_manifest_path: str | None
     plan_json: bytes | None = None
     plan_fingerprint: str | None = None
+    superseded_by_job_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -436,6 +462,102 @@ class SnapshotRepository:
         if cursor.rowcount != 1:
             raise NotFound
 
+    def _hydrate_verified(self, row: tuple[Any, ...]) -> ExecutionSnapshot:
+        try:
+            if type(row[9]) is not bytes:
+                raise DataIntegrityError
+            context_bytes = row[9]
+            context = json.loads(context_bytes)
+            if canonical_json(context) != context_bytes:
+                raise DataIntegrityError
+            if sha256_fingerprint(context) != row[10]:
+                raise DataIntegrityError
+            snapshot = ExecutionSnapshot(
+                snapshot_id=row[0],
+                brief_id=row[1],
+                company_id=row[2],
+                company_profile_version=row[3],
+                direction_id=row[4],
+                direction_version=row[5],
+                audience_segment_id=row[6],
+                audience_version=row[7],
+                prompt_set_version=row[8],
+                compiled_context=context,
+                snapshot_hash=row[10],
+                created_at=datetime.fromisoformat(row[11]),
+            )
+        except DataIntegrityError:
+            raise
+        except (TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise DataIntegrityError from exc
+
+        if type(context) is not dict or set(context) != _SNAPSHOT_CONTEXT_KEYS:
+            raise DataIntegrityError
+        company = context.get("company")
+        direction = context.get("direction")
+        audience = context.get("audience")
+        brief = context.get("brief")
+        if any(type(value) is not dict for value in (company, direction, audience, brief)):
+            raise DataIntegrityError
+        company = cast(dict[str, Any], company)
+        direction = cast(dict[str, Any], direction)
+        audience = cast(dict[str, Any], audience)
+        brief = cast(dict[str, Any], brief)
+        expected_values = (
+            (context.get("schema_version"), 1),
+            (context.get("prompt_set_version"), snapshot.prompt_set_version),
+            (company.get("company_id"), snapshot.company_id),
+            (company.get("company_profile_version"), snapshot.company_profile_version),
+            (direction.get("company_id"), snapshot.company_id),
+            (direction.get("company_profile_version"), snapshot.company_profile_version),
+            (direction.get("direction_id"), snapshot.direction_id),
+            (direction.get("direction_version"), snapshot.direction_version),
+            (audience.get("company_id"), snapshot.company_id),
+            (audience.get("direction_id"), snapshot.direction_id),
+            (audience.get("direction_version"), snapshot.direction_version),
+            (audience.get("audience_segment_id"), snapshot.audience_segment_id),
+            (audience.get("audience_version"), snapshot.audience_version),
+            (brief.get("brief_id"), snapshot.brief_id),
+            (brief.get("company_id"), snapshot.company_id),
+            (brief.get("company_profile_version"), snapshot.company_profile_version),
+            (brief.get("direction_id"), snapshot.direction_id),
+            (brief.get("direction_version"), snapshot.direction_version),
+            (brief.get("audience_segment_id"), snapshot.audience_segment_id),
+            (brief.get("audience_version"), snapshot.audience_version),
+        )
+        if any(
+            type(actual) is not type(expected) or actual != expected
+            for actual, expected in expected_values
+        ):
+            raise DataIntegrityError
+        for model_type, payload in (
+            (CompanyProfile, company),
+            (BusinessDirection, direction),
+            (AudienceSegment, audience),
+            (SeoBrief, brief),
+        ):
+            try:
+                model_values = dict(payload)
+                for timestamp_field in ("created_at", "updated_at"):
+                    timestamp = model_values.get(timestamp_field)
+                    if type(timestamp) is not str:
+                        raise DataIntegrityError
+                    parsed_timestamp = datetime.fromisoformat(timestamp)
+                    if (
+                        parsed_timestamp.tzinfo is None
+                        or parsed_timestamp.utcoffset() is None
+                    ):
+                        raise DataIntegrityError
+                    model_values[timestamp_field] = parsed_timestamp
+                normalized = model_type.model_validate(model_values).model_dump(mode="json")
+            except DataIntegrityError:
+                raise
+            except (TypeError, ValueError) as exc:
+                raise DataIntegrityError from exc
+            if canonical_json(normalized) != canonical_json(payload):
+                raise DataIntegrityError
+        return snapshot
+
     def get_snapshot(self, company_id: str, snapshot_id: str) -> ExecutionSnapshot:
         row = self._conn.execute(
             """SELECT snapshot_id, brief_id, company_id, company_profile_version,
@@ -447,21 +569,7 @@ class SnapshotRepository:
         ).fetchone()
         if row is None:
             raise NotFound
-        context_bytes = bytes(row[9])
-        return ExecutionSnapshot(
-            snapshot_id=row[0],
-            brief_id=row[1],
-            company_id=row[2],
-            company_profile_version=row[3],
-            direction_id=row[4],
-            direction_version=row[5],
-            audience_segment_id=row[6],
-            audience_version=row[7],
-            prompt_set_version=row[8],
-            compiled_context=json.loads(context_bytes),
-            snapshot_hash=row[10],
-            created_at=datetime.fromisoformat(row[11]),
-        )
+        return self._hydrate_verified(row)
 
     def get_snapshot_by_hash(
         self, company_id: str, snapshot_hash: str
@@ -476,20 +584,7 @@ class SnapshotRepository:
         ).fetchone()
         if row is None:
             return None
-        return ExecutionSnapshot(
-            snapshot_id=row[0],
-            brief_id=row[1],
-            company_id=row[2],
-            company_profile_version=row[3],
-            direction_id=row[4],
-            direction_version=row[5],
-            audience_segment_id=row[6],
-            audience_version=row[7],
-            prompt_set_version=row[8],
-            compiled_context=json.loads(bytes(row[9])),
-            snapshot_hash=row[10],
-            created_at=datetime.fromisoformat(row[11]),
-        )
+        return self._hydrate_verified(row)
 
 
 class JobRepository:
@@ -499,21 +594,36 @@ class JobRepository:
         self._conn = conn
 
     def add_job(self, job: JobRecord) -> None:
-        cursor = self._conn.execute(
+        authoritative = self._conn.execute(
+            """SELECT snapshot.snapshot_hash, snapshot.direction_id,
+                      snapshot.audience_segment_id, brief.created_by
+               FROM execution_snapshots AS snapshot
+               JOIN brief_drafts AS brief
+                 ON brief.company_id = snapshot.company_id
+                AND brief.brief_id = snapshot.brief_id
+               WHERE snapshot.company_id = ? AND snapshot.snapshot_id = ?
+                 AND brief.brief_id = ?""",
+            (job.company_id, job.snapshot_id, job.brief_id),
+        ).fetchone()
+        if authoritative is None:
+            raise NotFound
+        if authoritative != (
+            job.snapshot_hash,
+            job.direction_id,
+            job.audience_segment_id,
+            job.created_by,
+        ):
+            raise DataIntegrityError
+
+        self._conn.execute(
             """INSERT INTO jobs(
                    job_id, brief_id, brief_fingerprint, snapshot_id, snapshot_hash,
                    company_id, direction_id, audience_segment_id, state, current_stage,
                    approved_plan_fingerprint, approval_record_id, attempt, created_by,
                    created_at, started_at, finished_at, error_code, error_summary,
-                   artifact_manifest_path, plan_json, plan_fingerprint
-               )
-               SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-               FROM brief_drafts AS brief
-               JOIN execution_snapshots AS snapshot
-                 ON snapshot.company_id = brief.company_id
-                AND snapshot.brief_id = brief.brief_id
-               WHERE brief.company_id = ? AND brief.brief_id = ?
-                 AND snapshot.snapshot_id = ?""",
+                   artifact_manifest_path, plan_json, plan_fingerprint,
+                   superseded_by_job_id
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 job.job_id,
                 job.brief_id,
@@ -537,13 +647,9 @@ class JobRepository:
                 job.artifact_manifest_path,
                 job.plan_json,
                 job.plan_fingerprint,
-                job.company_id,
-                job.brief_id,
-                job.snapshot_id,
+                job.superseded_by_job_id,
             ),
         )
-        if cursor.rowcount != 1:
-            raise NotFound
 
     def get_job(self, company_id: str, job_id: str) -> JobRecord:
         row = self._conn.execute(
@@ -551,7 +657,8 @@ class JobRepository:
                       company_id, direction_id, audience_segment_id, state, current_stage,
                       approved_plan_fingerprint, approval_record_id, attempt, created_by,
                       created_at, started_at, finished_at, error_code, error_summary,
-                      artifact_manifest_path, plan_json, plan_fingerprint
+                      artifact_manifest_path, plan_json, plan_fingerprint,
+                      superseded_by_job_id
                FROM jobs
                WHERE company_id = ? AND job_id = ?""",
             (company_id, job_id),
@@ -559,6 +666,20 @@ class JobRepository:
         if row is None:
             raise NotFound
         return JobRecord(*row)
+
+    def supersede_pending_jobs(
+        self, company_id: str, created_by: str, *, replacement_job_id: str
+    ) -> None:
+        self._conn.execute(
+            """UPDATE jobs
+               SET superseded_by_job_id = ?
+               WHERE company_id = ? AND created_by = ? AND job_id != ?
+                 AND superseded_by_job_id IS NULL
+                 AND state IN (
+                     'DRAFT', 'VALIDATED', 'PLANNED', 'AWAITING_PAID_APPROVAL'
+                 )""",
+            (replacement_job_id, company_id, created_by, replacement_job_id),
+        )
 
     def append_transition(
         self,
@@ -606,7 +727,8 @@ class JobRepository:
             """UPDATE jobs
                SET state = ?, attempt = ?, started_at = ?, finished_at = ?,
                    error_code = ?, error_summary = ?
-               WHERE company_id = ? AND job_id = ? AND state = ?""",
+               WHERE company_id = ? AND job_id = ? AND state = ?
+                 AND superseded_by_job_id IS NULL""",
             (
                 target_state,
                 attempt,
@@ -631,13 +753,14 @@ class JobRepository:
         approval_record_id: str,
     ) -> bool:
         cursor = self._conn.execute(
-            """UPDATE jobs
+            """UPDATE OR IGNORE jobs
                SET state = 'QUEUED', approved_plan_fingerprint = ?,
                    approval_record_id = ?
                WHERE company_id = ? AND job_id = ? AND state = ?
                  AND plan_fingerprint = ?
                  AND approved_plan_fingerprint IS NULL
-                 AND approval_record_id IS NULL""",
+                 AND approval_record_id IS NULL
+                 AND superseded_by_job_id IS NULL""",
             (
                 plan_fingerprint,
                 approval_record_id,
@@ -648,7 +771,6 @@ class JobRepository:
             ),
         )
         return cursor.rowcount == 1
-
 
 class ApprovalRepository:
     """Persist approvals only through the owning job's company scope."""
@@ -697,4 +819,20 @@ class ApprovalRepository:
         ).fetchone()
         if row is None:
             raise NotFound
-        return ApprovalRecord(*row)
+        approved_at = _domain_timestamp(row[6], optional=False)
+        if approved_at is None:
+            raise DataIntegrityError
+        expires_at = _domain_timestamp(row[7], optional=True)
+        try:
+            return ApprovalRecord(
+                approval_record_id=row[0],
+                job_id=row[1],
+                approval_type=row[2],
+                snapshot_hash=row[3],
+                plan_fingerprint=row[4],
+                approved_by=row[5],
+                approved_at=approved_at,
+                expires_at=expires_at,
+            )
+        except (TypeError, ValueError) as exc:
+            raise DataIntegrityError from exc

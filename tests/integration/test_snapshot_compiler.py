@@ -1,4 +1,5 @@
 import json
+import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -219,6 +220,19 @@ def test_snapshot_remains_immutable_after_revision_and_new_exact_versions_change
         )
 
         with transaction(conn):
+            BriefService(conn, clock=lambda: NOW).update_brief(
+                UpdateBrief(
+                    brief_id=first_brief_id,
+                    actor_id="invented-actor",
+                    company_id="avtomalyar",
+                    goal="Legally revised goal after snapshot compilation.",
+                )
+            )
+
+        repository = SnapshotRepository(conn)
+        assert repository.get_snapshot("avtomalyar", first.snapshot_id) == first
+
+        with transaction(conn):
             second_brief_id = _seed_revised_validated_brief(conn)
             second = SnapshotCompiler(
                 conn,
@@ -227,7 +241,6 @@ def test_snapshot_remains_immutable_after_revision_and_new_exact_versions_change
                 id_factory=lambda: "snapshot-history-two",
             ).compile_snapshot(second_brief_id, 7)
 
-        repository = SnapshotRepository(conn)
         historical = repository.get_snapshot("avtomalyar", first.snapshot_id)
         assert historical == first
         assert bytes(
@@ -249,6 +262,40 @@ def test_snapshot_remains_immutable_after_revision_and_new_exact_versions_change
         assert second.snapshot_hash != first.snapshot_hash
         with pytest.raises(LookupError, match="record not found"):
             repository.get_snapshot("sweet-world", first.snapshot_id)
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "UPDATE execution_snapshots SET snapshot_hash = 'tampered'",
+        "DELETE FROM execution_snapshots",
+    ],
+)
+def test_execution_snapshots_are_append_only_at_storage_boundary(
+    tmp_path: Path,
+    statement: str,
+) -> None:
+    conn = connect(tmp_path / "snapshot-append-only.db")
+    try:
+        migrate(conn)
+        with transaction(conn):
+            brief_id = _seed_validated_brief(conn)
+            snapshot = SnapshotCompiler(
+                conn,
+                company_id="avtomalyar",
+                clock=lambda: NOW,
+                id_factory=lambda: "snapshot-append-only",
+            ).compile_snapshot(brief_id, 1)
+
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(statement)
+        conn.rollback()
+
+        assert SnapshotRepository(conn).get_snapshot(
+            "avtomalyar", snapshot.snapshot_id
+        ) == snapshot
     finally:
         conn.close()
 

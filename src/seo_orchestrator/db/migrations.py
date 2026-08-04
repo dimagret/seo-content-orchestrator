@@ -2,7 +2,9 @@
 
 import sqlite3
 
-_LATEST_VERSION = 2
+from seo_orchestrator.errors import MigrationError
+
+_LATEST_VERSION = 3
 
 _MIGRATION_0001 = (
     """
@@ -199,14 +201,204 @@ _MIGRATION_0002 = (
     "ALTER TABLE jobs ADD COLUMN plan_fingerprint TEXT",
 )
 
+_MIGRATION_0003 = (
+    "ALTER TABLE jobs ADD COLUMN superseded_by_job_id TEXT REFERENCES jobs(job_id)",
+    "DROP INDEX one_active_job_per_creator",
+    """
+    CREATE UNIQUE INDEX one_active_job_per_creator
+    ON jobs(created_by)
+    WHERE state IN ('QUEUED', 'RUNNING', 'FAILED_RETRYABLE')
+    """,
+    """
+    CREATE TRIGGER jobs_created_by_immutable
+    BEFORE UPDATE OF created_by ON jobs
+    FOR EACH ROW
+    WHEN NEW.created_by IS NOT OLD.created_by
+    BEGIN
+        SELECT RAISE(ABORT, 'jobs.created_by is immutable');
+    END
+    """,
+    """
+    CREATE TRIGGER jobs_execution_provenance_immutable
+    BEFORE UPDATE OF
+        job_id, brief_id, brief_fingerprint, snapshot_id, snapshot_hash,
+        company_id, direction_id, audience_segment_id, created_at
+    ON jobs
+    FOR EACH ROW
+    WHEN NEW.job_id IS NOT OLD.job_id
+      OR NEW.brief_id IS NOT OLD.brief_id
+      OR NEW.brief_fingerprint IS NOT OLD.brief_fingerprint
+      OR NEW.snapshot_id IS NOT OLD.snapshot_id
+      OR NEW.snapshot_hash IS NOT OLD.snapshot_hash
+      OR NEW.company_id IS NOT OLD.company_id
+      OR NEW.direction_id IS NOT OLD.direction_id
+      OR NEW.audience_segment_id IS NOT OLD.audience_segment_id
+      OR NEW.created_at IS NOT OLD.created_at
+    BEGIN
+        SELECT RAISE(ABORT, 'job execution provenance is immutable');
+    END
+    """,
+    """
+    CREATE TRIGGER jobs_execution_plan_immutable
+    BEFORE UPDATE OF plan_json, plan_fingerprint ON jobs
+    FOR EACH ROW
+    WHEN (
+         NEW.plan_json IS NOT OLD.plan_json
+         OR NEW.plan_fingerprint IS NOT OLD.plan_fingerprint
+     )
+    BEGIN
+        SELECT RAISE(ABORT, 'job execution plan is immutable');
+    END
+    """,
+    """
+    CREATE TRIGGER jobs_supersession_append_only
+    BEFORE UPDATE OF superseded_by_job_id ON jobs
+    FOR EACH ROW
+    WHEN OLD.superseded_by_job_id IS NOT NULL
+     AND NEW.superseded_by_job_id IS NOT OLD.superseded_by_job_id
+    BEGIN
+        SELECT RAISE(ABORT, 'job supersession is append-only');
+    END
+    """,
+    """
+    CREATE TRIGGER jobs_supersession_initially_null
+    BEFORE INSERT ON jobs
+    FOR EACH ROW
+    WHEN NEW.superseded_by_job_id IS NOT NULL
+    BEGIN
+        SELECT RAISE(ABORT, 'new job cannot be pre-superseded');
+    END
+    """,
+    """
+    CREATE TRIGGER jobs_supersession_same_lineage
+    BEFORE UPDATE OF superseded_by_job_id ON jobs
+    FOR EACH ROW
+    WHEN NEW.superseded_by_job_id IS NOT NULL
+     AND NOT EXISTS (
+         SELECT 1
+         FROM jobs AS replacement
+         WHERE replacement.job_id = NEW.superseded_by_job_id
+           AND replacement.company_id = OLD.company_id
+           AND replacement.created_by = OLD.created_by
+     )
+    BEGIN
+        SELECT RAISE(ABORT, 'job supersession must preserve lineage');
+    END
+    """,
+    """
+    CREATE TRIGGER jobs_approval_binding_initially_null
+    BEFORE INSERT ON jobs
+    FOR EACH ROW
+    WHEN NEW.approved_plan_fingerprint IS NOT NULL
+      OR NEW.approval_record_id IS NOT NULL
+    BEGIN
+        SELECT RAISE(ABORT, 'new job cannot be pre-approved');
+    END
+    """,
+    """
+    CREATE TRIGGER jobs_approval_binding_write_once
+    BEFORE UPDATE OF approved_plan_fingerprint, approval_record_id ON jobs
+    FOR EACH ROW
+    WHEN (
+        NEW.approved_plan_fingerprint IS NOT OLD.approved_plan_fingerprint
+        OR NEW.approval_record_id IS NOT OLD.approval_record_id
+    )
+    AND NOT (
+        OLD.approved_plan_fingerprint IS NULL
+        AND OLD.approval_record_id IS NULL
+        AND OLD.state = 'AWAITING_PAID_APPROVAL'
+        AND NEW.state = 'QUEUED'
+        AND NEW.plan_fingerprint IS NOT NULL
+        AND NEW.approved_plan_fingerprint = NEW.plan_fingerprint
+        AND NEW.approval_record_id IS NOT NULL
+        AND EXISTS (
+            SELECT 1
+            FROM approval_records AS approval
+            WHERE approval.approval_record_id = NEW.approval_record_id
+              AND approval.job_id = OLD.job_id
+              AND approval.approval_type = 'paid_execution'
+              AND approval.snapshot_hash = OLD.snapshot_hash
+              AND approval.plan_fingerprint = NEW.plan_fingerprint
+        )
+    )
+    BEGIN
+        SELECT RAISE(ABORT, 'job approval binding is write-once');
+    END
+    """,
+    """
+    CREATE TRIGGER execution_snapshots_immutable_update
+    BEFORE UPDATE ON execution_snapshots
+    FOR EACH ROW
+    BEGIN
+        SELECT RAISE(ABORT, 'execution snapshots are immutable');
+    END
+    """,
+    """
+    CREATE TRIGGER execution_snapshots_immutable_delete
+    BEFORE DELETE ON execution_snapshots
+    FOR EACH ROW
+    BEGIN
+        SELECT RAISE(ABORT, 'execution snapshots are append-only');
+    END
+    """,
+    """
+    CREATE TRIGGER approval_records_immutable_update
+    BEFORE UPDATE ON approval_records
+    FOR EACH ROW
+    BEGIN
+        SELECT RAISE(ABORT, 'approval records are immutable');
+    END
+    """,
+    """
+    CREATE TRIGGER approval_records_immutable_delete
+    BEFORE DELETE ON approval_records
+    FOR EACH ROW
+    BEGIN
+        SELECT RAISE(ABORT, 'approval records are append-only');
+    END
+    """,
+    """
+    CREATE TRIGGER job_transitions_immutable_update
+    BEFORE UPDATE ON job_transitions
+    FOR EACH ROW
+    BEGIN
+        SELECT RAISE(ABORT, 'job transitions are immutable');
+    END
+    """,
+    """
+    CREATE TRIGGER job_transitions_immutable_delete
+    BEFORE DELETE ON job_transitions
+    FOR EACH ROW
+    BEGIN
+        SELECT RAISE(ABORT, 'job transitions are append-only');
+    END
+    """,
+)
+
 _MIGRATIONS = (
     (1, _MIGRATION_0001),
     (2, _MIGRATION_0002),
+    (3, _MIGRATION_0003),
 )
+
+
+def _validated_applied_versions(conn: sqlite3.Connection) -> tuple[int, ...]:
+    applied = tuple(
+        row[0]
+        for row in conn.execute(
+            "SELECT version FROM schema_migrations ORDER BY version"
+        )
+    )
+    known = tuple(version for version, _ in _MIGRATIONS)
+    if applied != known[: len(applied)]:
+        raise MigrationError
+    return applied
 
 
 def migrate(conn: sqlite3.Connection) -> int:
     """Apply all known migrations and return the latest schema version."""
+    if conn.in_transaction:
+        raise sqlite3.OperationalError("migrate cannot run inside a caller transaction")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -215,23 +407,20 @@ def migrate(conn: sqlite3.Connection) -> int:
         )
         """
     )
-    applied_versions = {
-        row[0] for row in conn.execute("SELECT version FROM schema_migrations")
-    }
+    _validated_applied_versions(conn)
     for version, statements in _MIGRATIONS:
-        if version in applied_versions:
-            continue
+        conn.execute("BEGIN IMMEDIATE")
         try:
-            conn.execute("BEGIN IMMEDIATE")
-            for statement in statements:
-                conn.execute(statement)
-            conn.execute(
-                "INSERT INTO schema_migrations(version) VALUES (?)",
-                (version,),
-            )
-        except Exception:
+            applied_versions = _validated_applied_versions(conn)
+            if version not in applied_versions:
+                for statement in statements:
+                    conn.execute(statement)
+                conn.execute(
+                    "INSERT INTO schema_migrations(version) VALUES (?)",
+                    (version,),
+                )
+            conn.commit()
+        except BaseException:
             conn.rollback()
             raise
-        else:
-            conn.commit()
     return _LATEST_VERSION

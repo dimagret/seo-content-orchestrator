@@ -2,17 +2,24 @@
 
 from __future__ import annotations
 
-import hashlib
 import sqlite3
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
 
 from seo_orchestrator.db.connection import transaction
-from seo_orchestrator.db.repositories import ApprovalRepository, JobRepository
+from seo_orchestrator.db.repositories import (
+    ApprovalRepository,
+    JobRepository,
+    SnapshotRepository,
+)
 from seo_orchestrator.domain import ApprovalRecord, JobState
-from seo_orchestrator.domain.approvals import canonical_plan_bytes, deserialize_plan
-from seo_orchestrator.errors import ApprovalInvalid, StateConflict
+from seo_orchestrator.errors import ApprovalInvalid, DataIntegrityError, StateConflict
+from seo_orchestrator.services.jobs import (
+    _domain_job,
+    _require_job_snapshot_integrity,
+    _require_plan_integrity,
+)
 
 
 class ApprovalService:
@@ -30,6 +37,7 @@ class ApprovalService:
         self._company_id = company_id
         self._jobs = JobRepository(conn)
         self._approvals = ApprovalRepository(conn)
+        self._snapshots = SnapshotRepository(conn)
         self._clock = clock or (lambda: datetime.now(UTC))
         self._id_factory = id_factory or (lambda: f"approval-{uuid.uuid4().hex}")
 
@@ -43,22 +51,25 @@ class ApprovalService:
         """Validate durable fingerprints, bind one approval, and queue atomically."""
         with transaction(self._conn):
             job = self._jobs.get_job(self._company_id, job_id)
-            if job.state != JobState.AWAITING_PAID_APPROVAL.value:
+            _domain_job(job)
+            if (
+                job.state != JobState.AWAITING_PAID_APPROVAL.value
+                or job.superseded_by_job_id is not None
+            ):
                 raise StateConflict
-            payload = job.plan_json
-            stored_fingerprint = job.plan_fingerprint
-            if type(payload) is not bytes or type(stored_fingerprint) is not str:
-                raise ApprovalInvalid
-            recomputed_fingerprint = hashlib.sha256(payload).hexdigest()
-            if recomputed_fingerprint != stored_fingerprint:
+            if type(actor_id) is not str or not actor_id.strip():
                 raise ApprovalInvalid
             try:
-                stored_plan = deserialize_plan(payload)
-                canonical_payload = canonical_plan_bytes(stored_plan)
-            except (TypeError, ValueError) as exc:
+                _require_plan_integrity(job)
+            except DataIntegrityError as exc:
                 raise ApprovalInvalid from exc
-            if canonical_payload != payload:
+            stored_fingerprint = job.plan_fingerprint
+            if type(stored_fingerprint) is not str:
                 raise ApprovalInvalid
+            snapshot = self._snapshots.get_snapshot(
+                self._company_id, job.snapshot_id
+            )
+            _require_job_snapshot_integrity(job, snapshot)
             if snapshot_hash != job.snapshot_hash:
                 raise ApprovalInvalid
             if plan_fingerprint != stored_fingerprint:
