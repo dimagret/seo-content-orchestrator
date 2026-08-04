@@ -1,0 +1,52 @@
+{
+  "content_markdown": "# Покраска автомобиля\n\nКак подготовить автомобиль к покраске без лишних переделок.",
+  "titles": [
+    "Покраска автомобиля: этапы подготовки",
+    "Как подготовить автомобиль к покраске",
+    "Подготовка кузова перед покраской",
+    "Покраска авто без повторных переделок",
+    "Что проверить перед покраской автомобиля"
+  ],
+  "descriptions": [
+    "Разбираем этапы подготовки автомобиля к покраске и контроль результата.",
+    "Практический порядок подготовки кузова перед покраской автомобиля.",
+    "Что проверить до начала покраски, чтобы избежать повторных переделок.",
+    "Подготовка автомобиля к покраске: материалы, этапы и контроль качества.",
+    "Пошаговая подготовка кузова к покраске с проверяемыми критериями."
+  ],
+  "keyword_qa": {
+    "primary_keyword": "покраска автомобиля",
+    "occurrences": 3,
+    "passed": true
+  },
+  "text_metrics": {
+    "characters": 84,
+    "words": 11
+  },
+  "sources": [
+    {
+      "url": "https://example.com/paint-preparation",
+      "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "fetched_at": "2026-08-04T09:00:00+00:00"
+    }
+  ],
+  "warnings": [],
+  "model_usage": {
+    "models": [
+      {
+        "model_id": "writer-model-v1",
+        "provider_id": "mock-provider",
+        "input_tokens": 120,
+        "output_tokens": 80
+      }
+    ]
+  },
+  "stage_timings": {
+    "research_ms": 1200,
+    "writing_ms": 2400
+  },
+  "prompt_versions": {
+    "research": "research-v1",
+    "writer": "writer-v2"
+  }
+}
