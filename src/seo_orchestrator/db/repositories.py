@@ -13,6 +13,7 @@ from typing import Any
 
 from seo_orchestrator.canonical import canonical_json
 from seo_orchestrator.domain import (
+    ApprovalRecord,
     AudienceSegment,
     BusinessDirection,
     CompanyProfile,
@@ -20,6 +21,16 @@ from seo_orchestrator.domain import (
     SeoBrief,
 )
 from seo_orchestrator.errors import CompanyArchived, NotFound
+
+
+def _storage_timestamp(value: object) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if type(value) is str:
+        return value
+    raise TypeError("approval timestamp must be a datetime, string, or None")
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,18 +55,8 @@ class JobRecord:
     error_code: str | None
     error_summary: str | None
     artifact_manifest_path: str | None
-
-
-@dataclass(frozen=True, slots=True)
-class ApprovalRecord:
-    approval_record_id: str
-    job_id: str
-    approval_type: str
-    snapshot_hash: str
-    plan_fingerprint: str
-    approved_by: str
-    approved_at: str
-    expires_at: str | None
+    plan_json: bytes | None = None
+    plan_fingerprint: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -504,9 +505,9 @@ class JobRepository:
                    company_id, direction_id, audience_segment_id, state, current_stage,
                    approved_plan_fingerprint, approval_record_id, attempt, created_by,
                    created_at, started_at, finished_at, error_code, error_summary,
-                   artifact_manifest_path
+                   artifact_manifest_path, plan_json, plan_fingerprint
                )
-               SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+               SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                FROM brief_drafts AS brief
                JOIN execution_snapshots AS snapshot
                  ON snapshot.company_id = brief.company_id
@@ -534,6 +535,8 @@ class JobRepository:
                 job.error_code,
                 job.error_summary,
                 job.artifact_manifest_path,
+                job.plan_json,
+                job.plan_fingerprint,
                 job.company_id,
                 job.brief_id,
                 job.snapshot_id,
@@ -548,7 +551,7 @@ class JobRepository:
                       company_id, direction_id, audience_segment_id, state, current_stage,
                       approved_plan_fingerprint, approval_record_id, attempt, created_by,
                       created_at, started_at, finished_at, error_code, error_summary,
-                      artifact_manifest_path
+                      artifact_manifest_path, plan_json, plan_fingerprint
                FROM jobs
                WHERE company_id = ? AND job_id = ?""",
             (company_id, job_id),
@@ -556,6 +559,95 @@ class JobRepository:
         if row is None:
             raise NotFound
         return JobRecord(*row)
+
+    def append_transition(
+        self,
+        company_id: str,
+        job_id: str,
+        *,
+        from_state: str | None,
+        to_state: str,
+        occurred_at: str,
+        reason_summary: str | None,
+    ) -> None:
+        cursor = self._conn.execute(
+            """INSERT INTO job_transitions(
+                   job_id, from_state, to_state, reason_summary, occurred_at
+               )
+               SELECT job_id, ?, ?, ?, ?
+               FROM jobs
+               WHERE company_id = ? AND job_id = ?""",
+            (
+                from_state,
+                to_state,
+                reason_summary,
+                occurred_at,
+                company_id,
+                job_id,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise NotFound
+
+    def compare_and_swap_state(
+        self,
+        company_id: str,
+        job_id: str,
+        *,
+        expected_state: str,
+        target_state: str,
+        attempt: int,
+        started_at: str | None,
+        finished_at: str | None,
+        error_code: str | None,
+        error_summary: str | None,
+    ) -> bool:
+        cursor = self._conn.execute(
+            """UPDATE jobs
+               SET state = ?, attempt = ?, started_at = ?, finished_at = ?,
+                   error_code = ?, error_summary = ?
+               WHERE company_id = ? AND job_id = ? AND state = ?""",
+            (
+                target_state,
+                attempt,
+                started_at,
+                finished_at,
+                error_code,
+                error_summary,
+                company_id,
+                job_id,
+                expected_state,
+            ),
+        )
+        return cursor.rowcount == 1
+
+    def bind_paid_approval(
+        self,
+        company_id: str,
+        job_id: str,
+        *,
+        expected_state: str,
+        plan_fingerprint: str,
+        approval_record_id: str,
+    ) -> bool:
+        cursor = self._conn.execute(
+            """UPDATE jobs
+               SET state = 'QUEUED', approved_plan_fingerprint = ?,
+                   approval_record_id = ?
+               WHERE company_id = ? AND job_id = ? AND state = ?
+                 AND plan_fingerprint = ?
+                 AND approved_plan_fingerprint IS NULL
+                 AND approval_record_id IS NULL""",
+            (
+                plan_fingerprint,
+                approval_record_id,
+                company_id,
+                job_id,
+                expected_state,
+                plan_fingerprint,
+            ),
+        )
+        return cursor.rowcount == 1
 
 
 class ApprovalRepository:
@@ -580,8 +672,8 @@ class ApprovalRepository:
                 approval.snapshot_hash,
                 approval.plan_fingerprint,
                 approval.approved_by,
-                approval.approved_at,
-                approval.expires_at,
+                _storage_timestamp(approval.approved_at),
+                _storage_timestamp(approval.expires_at),
                 company_id,
                 approval.job_id,
             ),

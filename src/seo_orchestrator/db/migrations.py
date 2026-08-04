@@ -2,7 +2,7 @@
 
 import sqlite3
 
-_LATEST_VERSION = 1
+_LATEST_VERSION = 2
 
 _MIGRATION_0001 = (
     """
@@ -194,6 +194,16 @@ _MIGRATION_0001 = (
     """,
 )
 
+_MIGRATION_0002 = (
+    "ALTER TABLE jobs ADD COLUMN plan_json BLOB",
+    "ALTER TABLE jobs ADD COLUMN plan_fingerprint TEXT",
+)
+
+_MIGRATIONS = (
+    (1, _MIGRATION_0001),
+    (2, _MIGRATION_0002),
+)
+
 
 def migrate(conn: sqlite3.Connection) -> int:
     """Apply all known migrations and return the latest schema version."""
@@ -205,23 +215,23 @@ def migrate(conn: sqlite3.Connection) -> int:
         )
         """
     )
-    applied = conn.execute(
-        "SELECT 1 FROM schema_migrations WHERE version = ?", (_LATEST_VERSION,)
-    ).fetchone()
-    if applied is not None:
-        return _LATEST_VERSION
-
-    try:
-        conn.execute("BEGIN IMMEDIATE")
-        for statement in _MIGRATION_0001:
-            conn.execute(statement)
-        conn.execute(
-            "INSERT INTO schema_migrations(version) VALUES (?)",
-            (_LATEST_VERSION,),
-        )
-    except Exception:
-        conn.rollback()
-        raise
-    else:
-        conn.commit()
+    applied_versions = {
+        row[0] for row in conn.execute("SELECT version FROM schema_migrations")
+    }
+    for version, statements in _MIGRATIONS:
+        if version in applied_versions:
+            continue
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            for statement in statements:
+                conn.execute(statement)
+            conn.execute(
+                "INSERT INTO schema_migrations(version) VALUES (?)",
+                (version,),
+            )
+        except Exception:
+            conn.rollback()
+            raise
+        else:
+            conn.commit()
     return _LATEST_VERSION

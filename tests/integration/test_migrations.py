@@ -3,8 +3,12 @@ from pathlib import Path
 
 import pytest
 
+from seo_orchestrator.db import migrations as migration_module
 from seo_orchestrator.db.connection import connect, transaction
 from seo_orchestrator.db.migrations import migrate
+from seo_orchestrator.domain import JobState
+from seo_orchestrator.errors import ApprovalInvalid
+from seo_orchestrator.services.jobs import JobService
 
 EXPECTED_TABLES = {
     "companies",
@@ -107,14 +111,128 @@ def test_connect_configures_durability_and_busy_timeout(tmp_path: Path) -> None:
         conn.close()
 
 
-def test_migrate_applies_version_one_idempotently(tmp_path: Path) -> None:
+def test_migrate_applies_ordered_versions_through_two_idempotently(tmp_path: Path) -> None:
     conn = connect(tmp_path / "orchestrator.db")
     try:
-        assert migrate(conn) == 1
-        assert migrate(conn) == 1
+        assert migrate(conn) == 2
+        assert migrate(conn) == 2
         assert conn.execute(
             "SELECT version FROM schema_migrations ORDER BY version"
-        ).fetchall() == [(1,)]
+        ).fetchall() == [(1,), (2,)]
+        job_columns = {
+            row[1]: (row[2], row[3]) for row in conn.execute("PRAGMA table_info(jobs)")
+        }
+        assert job_columns["plan_json"] == ("BLOB", 0)
+        assert job_columns["plan_fingerprint"] == ("TEXT", 0)
+    finally:
+        conn.close()
+
+
+def _create_version_one_database(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE schema_migrations (
+            version INTEGER PRIMARY KEY,
+            applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    conn.execute("BEGIN IMMEDIATE")
+    for statement in migration_module._MIGRATION_0001:
+        conn.execute(statement)
+    conn.execute("INSERT INTO schema_migrations(version) VALUES (1)")
+    conn.commit()
+
+
+def test_migrate_upgrades_v1_without_replaying_it_and_preserves_existing_rows(
+    tmp_path: Path,
+) -> None:
+    conn = connect(tmp_path / "upgrade.db")
+    try:
+        _create_version_one_database(conn)
+        _insert_brief_and_snapshot(conn)
+        _insert_job(conn, "legacy-job", "PLANNED")
+        conn.execute(
+            """INSERT INTO job_transitions(job_id, from_state, to_state, occurred_at)
+               VALUES (?, ?, ?, ?)""",
+            ("legacy-job", None, "PLANNED", "before-upgrade"),
+        )
+        conn.commit()
+
+        assert migrate(conn) == 2
+        assert conn.execute(
+            "SELECT version FROM schema_migrations ORDER BY version"
+        ).fetchall() == [(1,), (2,)]
+        assert conn.execute(
+            """SELECT job_id, state, plan_json, plan_fingerprint
+               FROM jobs WHERE job_id = ?""",
+            ("legacy-job",),
+        ).fetchone() == ("legacy-job", "PLANNED", None, None)
+        assert conn.execute(
+            """SELECT from_state, to_state, occurred_at
+               FROM job_transitions WHERE job_id = ?""",
+            ("legacy-job",),
+        ).fetchall() == [(None, "PLANNED", "before-upgrade")]
+
+        assert migrate(conn) == 2
+        assert conn.execute("SELECT COUNT(*) FROM jobs").fetchone() == (1,)
+        assert conn.execute("SELECT COUNT(*) FROM job_transitions").fetchone() == (1,)
+    finally:
+        conn.close()
+
+
+def test_transition_rejects_upgraded_v1_job_without_plan_and_preserves_storage(
+    tmp_path: Path,
+) -> None:
+    conn = connect(tmp_path / "legacy-transition.db")
+    try:
+        _create_version_one_database(conn)
+        _insert_brief_and_snapshot(conn)
+        _insert_job(conn, "legacy-job", "PLANNED")
+        conn.execute(
+            "UPDATE jobs SET created_at = ? WHERE job_id = ?",
+            ("2026-08-04T09:30:00+00:00", "legacy-job"),
+        )
+        conn.execute(
+            """INSERT INTO job_transitions(job_id, from_state, to_state, occurred_at)
+               VALUES (?, ?, ?, ?)""",
+            ("legacy-job", None, "PLANNED", "before-upgrade"),
+        )
+        conn.commit()
+        migrate(conn)
+        job_before = conn.execute(
+            """SELECT state, attempt, started_at, finished_at, error_code, error_summary,
+                      plan_json, plan_fingerprint
+               FROM jobs WHERE company_id = ? AND job_id = ?""",
+            ("company-a", "legacy-job"),
+        ).fetchone()
+        audit_before = conn.execute(
+            """SELECT transition_id, from_state, to_state, reason_summary, occurred_at
+               FROM job_transitions WHERE job_id = ? ORDER BY transition_id""",
+            ("legacy-job",),
+        ).fetchall()
+
+        with pytest.raises(ApprovalInvalid) as invalid:
+            JobService(conn, company_id="company-a").transition(
+                "legacy-job",
+                JobState.PLANNED,
+                JobState.AWAITING_PAID_APPROVAL,
+                "request paid approval",
+            )
+
+        assert invalid.value.code == "APPROVAL_INVALID"
+        assert conn.execute(
+            """SELECT state, attempt, started_at, finished_at, error_code, error_summary,
+                      plan_json, plan_fingerprint
+               FROM jobs WHERE company_id = ? AND job_id = ?""",
+            ("company-a", "legacy-job"),
+        ).fetchone() == job_before
+        assert conn.execute(
+            """SELECT transition_id, from_state, to_state, reason_summary, occurred_at
+               FROM job_transitions WHERE job_id = ? ORDER BY transition_id""",
+            ("legacy-job",),
+        ).fetchall() == audit_before
+        assert not conn.in_transaction
     finally:
         conn.close()
 

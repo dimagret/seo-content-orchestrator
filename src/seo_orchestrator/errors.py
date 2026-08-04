@@ -25,3 +25,30 @@ class CompanyArchived(RuntimeError):
 
     def __init__(self) -> None:
         super().__init__("company is archived")
+
+
+class StateConflict(RuntimeError):
+    """Raised when a job state compare-and-swap precondition is stale."""
+
+    code = "STATE_CONFLICT"
+
+    def __init__(self) -> None:
+        super().__init__("expected job state does not match")
+
+
+class InvalidTransition(RuntimeError):
+    """Raised when an ordered state pair is absent from the frozen graph."""
+
+    code = "INVALID_TRANSITION"
+
+    def __init__(self) -> None:
+        super().__init__("job state transition is not allowed")
+
+
+class ApprovalInvalid(RuntimeError):
+    """Raised when submitted or durable approval fingerprints fail closed."""
+
+    code = "APPROVAL_INVALID"
+
+    def __init__(self) -> None:
+        super().__init__("approval does not match the durable snapshot and plan")
