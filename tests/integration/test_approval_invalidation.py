@@ -55,13 +55,16 @@ def _seed_snapshot(
     brief_id: str = "brief-one",
     snapshot_id: str = "snapshot-one",
     actor_id: str = "actor-one",
+    company_profile_version: int = 1,
+    direction_version: int = 1,
+    audience_version: int = 1,
     prompt_set_version: int = 1,
 ) -> tuple[str, dict[str, JsonValue]]:
     timestamp = NOW.isoformat().replace("+00:00", "Z")
     company_context: dict[str, JsonValue] = {
         "company_id": company_id,
         "company_profile_id": f"{company_id}-profile",
-        "company_profile_version": 1,
+        "company_profile_version": company_profile_version,
         "name": "Example Company",
         "brand_summary": "A test-only company profile",
         "products_services_overview": "An invented service",
@@ -87,9 +90,9 @@ def _seed_snapshot(
     }
     direction_context: dict[str, JsonValue] = {
         "company_id": company_id,
-        "company_profile_version": 1,
+        "company_profile_version": company_profile_version,
         "direction_id": direction_id,
-        "direction_version": 1,
+        "direction_version": direction_version,
         "name": "Example Direction",
         "offerings": ["Invented offering"],
         "category_context": "Test category",
@@ -109,9 +112,9 @@ def _seed_snapshot(
     audience_context: dict[str, JsonValue] = {
         "company_id": company_id,
         "direction_id": direction_id,
-        "direction_version": 1,
+        "direction_version": direction_version,
         "audience_segment_id": audience_id,
-        "audience_version": 1,
+        "audience_version": audience_version,
         "name": "Example Audience",
         "buyer_roles": ["Owner"],
         "industry": "Test industry",
@@ -142,9 +145,10 @@ def _seed_snapshot(
             """INSERT INTO company_profile_versions(
                    company_id, version, company_profile_id, profile_json,
                    created_at, updated_at
-               ) VALUES (?, 1, ?, ?, ?, ?)""",
+               ) VALUES (?, ?, ?, ?, ?, ?)""",
             (
                 company_id,
+                company_profile_version,
                 f"{company_id}-profile",
                 canonical_json(company_context),
                 NOW.isoformat(),
@@ -155,10 +159,12 @@ def _seed_snapshot(
             """INSERT INTO business_direction_versions(
                    company_id, direction_id, version, company_profile_version,
                    direction_json, created_at, updated_at
-               ) VALUES (?, ?, 1, 1, ?, ?, ?)""",
+               ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (
                 company_id,
                 direction_id,
+                direction_version,
+                company_profile_version,
                 canonical_json(direction_context),
                 NOW.isoformat(),
                 NOW.isoformat(),
@@ -168,11 +174,13 @@ def _seed_snapshot(
             """INSERT INTO audience_segment_versions(
                    company_id, direction_id, audience_segment_id, version,
                    direction_version, audience_json, created_at, updated_at
-               ) VALUES (?, ?, ?, 1, 1, ?, ?, ?)""",
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 company_id,
                 direction_id,
                 audience_id,
+                audience_version,
+                direction_version,
                 canonical_json(audience_context),
                 NOW.isoformat(),
                 NOW.isoformat(),
@@ -182,11 +190,11 @@ def _seed_snapshot(
     brief: dict[str, JsonValue] = {
         "brief_id": brief_id,
         "company_id": company_id,
-        "company_profile_version": 1,
+        "company_profile_version": company_profile_version,
         "direction_id": direction_id,
-        "direction_version": 1,
+        "direction_version": direction_version,
         "audience_segment_id": audience_id,
-        "audience_version": 1,
+        "audience_version": audience_version,
         "page_type": "service-page",
         "goal": "Explain an invented service",
         "target_language": "en",
@@ -208,12 +216,15 @@ def _seed_snapshot(
                brief_id, company_id, company_profile_version, direction_id,
                direction_version, audience_segment_id, audience_version,
                brief_json, status, created_by, created_at, updated_at
-           ) VALUES (?, ?, 1, ?, 1, ?, 1, ?, 'validated', ?, ?, ?)""",
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'validated', ?, ?, ?)""",
         (
             brief_id,
             company_id,
+            company_profile_version,
             direction_id,
+            direction_version,
             audience_id,
+            audience_version,
             canonical_json(brief),
             actor_id,
             NOW.isoformat(),
@@ -234,13 +245,16 @@ def _seed_snapshot(
                snapshot_id, brief_id, company_id, company_profile_version,
                direction_id, direction_version, audience_segment_id, audience_version,
                prompt_set_version, compiled_context, snapshot_hash, created_at
-           ) VALUES (?, ?, ?, 1, ?, 1, ?, 1, ?, ?, ?, ?)""",
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             snapshot_id,
             brief_id,
             company_id,
+            company_profile_version,
             direction_id,
+            direction_version,
             audience_id,
+            audience_version,
             prompt_set_version,
             canonical_json(context),
             snapshot_hash,
@@ -395,7 +409,16 @@ def _force_job_state(
 def test_transition_applies_each_generic_edge_once_and_only_retry_requeues_increment_attempt(
     tmp_path: Path, source: JobState, target: JobState
 ) -> None:
-    conn, _, _ = _open_seeded(tmp_path / f"edge-{source}-{target}.db")
+    conn = connect(tmp_path / f"edge-{source}-{target}.db")
+    migrate(conn)
+    _seed_snapshot(
+        conn,
+        company_profile_version=2,
+        direction_version=3,
+        audience_version=5,
+        prompt_set_version=7,
+    )
+    conn.commit()
     try:
         service = _job_service(conn)
         service.plan_job("snapshot-one", _plan())
@@ -413,6 +436,12 @@ def test_transition_applies_each_generic_edge_once_and_only_retry_requeues_incre
         assert isinstance(result, SeoJob)
         assert result.state is target
         assert result.attempt == (5 if source is JobState.FAILED_RETRYABLE else 4)
+        assert (
+            result.company_profile_version,
+            result.direction_version,
+            result.audience_version,
+            result.prompt_set_version,
+        ) == (2, 3, 5, 7)
         assert conn.execute(
             """SELECT from_state, to_state, reason_summary
                FROM job_transitions WHERE job_id = ? ORDER BY transition_id""",

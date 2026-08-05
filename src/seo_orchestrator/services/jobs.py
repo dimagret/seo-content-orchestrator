@@ -6,6 +6,7 @@ import hashlib
 import sqlite3
 import uuid
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from seo_orchestrator.canonical import sha256_fingerprint
@@ -187,6 +188,19 @@ def _domain_job(record: JobRecord) -> SeoJob:
         raise
     except (TypeError, ValueError) as exc:
         raise DataIntegrityError from exc
+
+
+def _domain_job_with_snapshot(
+    record: JobRecord, snapshot: ExecutionSnapshot
+) -> SeoJob:
+    _require_job_snapshot_integrity(record, snapshot)
+    return replace(
+        _domain_job(record),
+        company_profile_version=snapshot.company_profile_version,
+        direction_version=snapshot.direction_version,
+        audience_version=snapshot.audience_version,
+        prompt_set_version=snapshot.prompt_set_version,
+    )
 
 
 class JobService:
@@ -403,5 +417,9 @@ class JobService:
                     occurred_at=now,
                     reason_summary=reason,
                 )
-                result = _domain_job(self._jobs.get_job(self._company_id, job_id))
+                result_record = self._jobs.get_job(self._company_id, job_id)
+                result_snapshot = self._snapshots.get_snapshot(
+                    self._company_id, result_record.snapshot_id
+                )
+                result = _domain_job_with_snapshot(result_record, result_snapshot)
         return result

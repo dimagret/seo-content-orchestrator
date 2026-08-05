@@ -1,4 +1,6 @@
 .worktrees/
+.hermes/
+pytest-of-*/
 .venv/
 __pycache__/
 .pytest_cache/

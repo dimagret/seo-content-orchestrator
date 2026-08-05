@@ -41,6 +41,10 @@ class SeoJob:
     error_code: str | None
     error_summary: str | None
     artifact_manifest_path: str | None
+    company_profile_version: int | None = None
+    direction_version: int | None = None
+    audience_version: int | None = None
+    prompt_set_version: int | None = None
 
 
 ALLOWED_TRANSITIONS: frozenset[tuple[JobState, JobState]] = frozenset(
