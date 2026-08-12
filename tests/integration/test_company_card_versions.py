@@ -219,7 +219,7 @@ def test_archival_preserves_historical_job_and_exact_card_readability(tmp_path: 
                 finished_at=NOW.isoformat(),
                 error_code=None,
                 error_summary=None,
-                artifact_manifest_path="/invented/historical-manifest.json",
+                artifact_manifest_path=None,
             )
             JobRepository(conn).add_job(historical_job)
             service.archive_company("avtomalyar", "fixture-archivist")

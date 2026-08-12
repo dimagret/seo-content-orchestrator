@@ -18,6 +18,9 @@ dependencies = [
   "uvicorn>=0.35,<1",
 ]
 
+[project.scripts]
+seo-orchestrator = "seo_orchestrator.cli:main"
+
 [dependency-groups]
 dev = [
   "mypy>=1.17,<2",

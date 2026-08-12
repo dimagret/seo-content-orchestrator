@@ -169,6 +169,10 @@ class CompanyCardService:
         """Retrieve one exact historical profile within explicit company scope."""
         return self._repository.get_profile(company_id, version)
 
+    def list_current_company_profiles(self) -> tuple[CompanyProfile, ...]:
+        """Return current profiles for active companies without exposing persistence."""
+        return self._repository.list_current_profiles()
+
     def create_direction(self, command: CreateDirection) -> BusinessDirection:
         self._repository.require_active(command.company_id)
         self._repository.get_profile(command.company_id, command.company_profile_version)

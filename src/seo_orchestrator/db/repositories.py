@@ -180,6 +180,29 @@ class CompanyRepository:
         values["updated_at"] = datetime.fromisoformat(values["updated_at"])
         return CompanyProfile.model_validate(values)
 
+    def list_current_profiles(self) -> tuple[CompanyProfile, ...]:
+        """Return current profiles for active companies in deterministic company order."""
+        rows = self._conn.execute(
+            """SELECT profile.profile_json
+               FROM companies AS company
+               JOIN company_profile_versions AS profile
+                 ON profile.company_id = company.company_id
+               WHERE company.status = 'active'
+                 AND profile.version = (
+                     SELECT MAX(current_profile.version)
+                     FROM company_profile_versions AS current_profile
+                     WHERE current_profile.company_id = company.company_id
+                 )
+               ORDER BY company.company_id ASC"""
+        ).fetchall()
+        result: list[CompanyProfile] = []
+        for row in rows:
+            values: dict[str, Any] = json.loads(row[0])
+            values["created_at"] = datetime.fromisoformat(values["created_at"])
+            values["updated_at"] = datetime.fromisoformat(values["updated_at"])
+            result.append(CompanyProfile.model_validate(values))
+        return tuple(result)
+
     def add_direction(self, direction: BusinessDirection) -> None:
         self._conn.execute(
             """INSERT INTO business_direction_versions(
@@ -743,6 +766,22 @@ class JobRepository:
         )
         return cursor.rowcount == 1
 
+    def bind_artifact_manifest(
+        self, company_id: str, job_id: str, manifest_path: str
+    ) -> bool:
+        """Attach one manifest to one succeeded job without permitting replacement."""
+        if type(manifest_path) is not str or not manifest_path:
+            raise ValueError("manifest path must be a non-empty string")
+        cursor = self._conn.execute(
+            """UPDATE jobs
+               SET artifact_manifest_path = ?
+               WHERE company_id = ? AND job_id = ? AND state = 'SUCCEEDED'
+                 AND artifact_manifest_path IS NULL
+                 AND superseded_by_job_id IS NULL""",
+            (manifest_path, company_id, job_id),
+        )
+        return cursor.rowcount == 1
+
     def bind_paid_approval(
         self,
         company_id: str,
@@ -836,3 +875,70 @@ class ApprovalRepository:
             )
         except (TypeError, ValueError) as exc:
             raise DataIntegrityError from exc
+
+
+class WebhookNonceRepository:
+    """Persist replay nonces with transaction ownership left to the caller."""
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    def consume_nonce(self, nonce: str, received_at: datetime, expires_at: datetime) -> bool:
+        """Atomically record one fresh nonce and prune entries expired at receipt time."""
+        if type(nonce) is not str or not nonce:
+            raise ValueError("nonce must be a non-empty string")
+        if type(received_at) is not datetime or type(expires_at) is not datetime:
+            raise TypeError("nonce timestamps must be datetimes")
+        if (
+            received_at.tzinfo is None
+            or received_at.utcoffset() is None
+            or expires_at.tzinfo is None
+            or expires_at.utcoffset() is None
+            or expires_at <= received_at
+        ):
+            raise ValueError("nonce timestamps must be ordered and timezone-aware")
+        received_text = _storage_timestamp(received_at)
+        expires_text = _storage_timestamp(expires_at)
+        if received_text is None or expires_text is None:
+            raise DataIntegrityError
+        self._conn.execute("DELETE FROM webhook_nonces WHERE expires_at <= ?", (received_text,))
+        cursor = self._conn.execute(
+            """INSERT INTO webhook_nonces(nonce, received_at, expires_at)
+               VALUES (?, ?, ?)
+               ON CONFLICT(nonce) DO NOTHING""",
+            (nonce, received_text, expires_text),
+        )
+        return cursor.rowcount == 1
+
+
+class WebhookCallbackReceiptRepository:
+    """Persist one immutable semantic callback receipt per authenticated delivery key."""
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    def record_receipt(
+        self,
+        *,
+        company_id: str,
+        job_id: str,
+        snapshot_hash: str,
+        idempotency_key: str,
+        received_at: datetime,
+    ) -> bool:
+        if any(
+            type(value) is not str or not value
+            for value in (company_id, job_id, snapshot_hash, idempotency_key)
+        ):
+            raise ValueError("callback receipt identifiers must be non-empty strings")
+        accepted_at = _storage_timestamp(received_at)
+        if accepted_at is None:
+            raise DataIntegrityError
+        cursor = self._conn.execute(
+            """INSERT INTO webhook_callback_receipts(
+                   company_id, job_id, snapshot_hash, idempotency_key, accepted_at
+               ) VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(company_id, job_id, snapshot_hash, idempotency_key) DO NOTHING""",
+            (company_id, job_id, snapshot_hash, idempotency_key, accepted_at),
+        )
+        return cursor.rowcount == 1

@@ -4,7 +4,7 @@ import sqlite3
 
 from seo_orchestrator.errors import MigrationError
 
-_LATEST_VERSION = 3
+_LATEST_VERSION = 5
 
 _MIGRATION_0001 = (
     """
@@ -375,10 +375,68 @@ _MIGRATION_0003 = (
     """,
 )
 
+_MIGRATION_0004 = (
+    """
+    CREATE TABLE webhook_callback_receipts (
+        company_id TEXT NOT NULL,
+        job_id TEXT NOT NULL,
+        snapshot_hash TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        accepted_at TEXT NOT NULL,
+        PRIMARY KEY (company_id, job_id, snapshot_hash, idempotency_key),
+        FOREIGN KEY (company_id, job_id) REFERENCES jobs(company_id, job_id)
+    )
+    """,
+    """
+    CREATE TRIGGER webhook_callback_receipts_immutable_update
+    BEFORE UPDATE ON webhook_callback_receipts
+    FOR EACH ROW
+    BEGIN
+        SELECT RAISE(ABORT, 'callback receipts are immutable');
+    END
+    """,
+    """
+    CREATE TRIGGER webhook_callback_receipts_immutable_delete
+    BEFORE DELETE ON webhook_callback_receipts
+    FOR EACH ROW
+    BEGIN
+        SELECT RAISE(ABORT, 'callback receipts are append-only');
+    END
+    """,
+)
+
+_MIGRATION_0005 = (
+    """
+    CREATE TRIGGER jobs_artifact_manifest_binding_initially_null
+    BEFORE INSERT ON jobs
+    FOR EACH ROW
+    WHEN NEW.artifact_manifest_path IS NOT NULL
+    BEGIN
+        SELECT RAISE(ABORT, 'new job cannot be pre-bound to an artifact manifest');
+    END
+    """,
+    """
+    CREATE TRIGGER jobs_artifact_manifest_binding_write_once
+    BEFORE UPDATE OF artifact_manifest_path ON jobs
+    FOR EACH ROW
+    WHEN NOT (
+        OLD.artifact_manifest_path IS NULL
+        AND NEW.artifact_manifest_path IS NOT NULL
+        AND OLD.state = 'SUCCEEDED'
+        AND NEW.state = 'SUCCEEDED'
+    )
+    BEGIN
+        SELECT RAISE(ABORT, 'job artifact manifest binding is write-once');
+    END
+    """,
+)
+
 _MIGRATIONS = (
     (1, _MIGRATION_0001),
     (2, _MIGRATION_0002),
     (3, _MIGRATION_0003),
+    (4, _MIGRATION_0004),
+    (5, _MIGRATION_0005),
 )
 
 

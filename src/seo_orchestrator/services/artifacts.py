@@ -603,6 +603,30 @@ def _validate_job_provenance(job: SeoJob) -> None:
         raise ValueError("finished_at cannot precede started_at")
 
 
+def _expected_job_manifest_provenance(job: SeoJob) -> dict[str, JsonValue]:
+    return {
+        "job_id": job.job_id,
+        "company_id": job.company_id,
+        "brief_id": job.brief_id,
+        "brief_fingerprint": job.brief_fingerprint,
+        "snapshot_id": job.snapshot_id,
+        "snapshot_hash": job.snapshot_hash,
+        "direction_id": job.direction_id,
+        "audience_segment_id": job.audience_segment_id,
+        "approval_record_id": job.approval_record_id,
+        "approved_plan_fingerprint": job.approved_plan_fingerprint,
+        "attempt": job.attempt,
+        "company_profile_version": job.company_profile_version,
+        "direction_version": job.direction_version,
+        "audience_version": job.audience_version,
+        "prompt_set_version": job.prompt_set_version,
+        "status": job.state.value,
+        "job_created_at": _utc_iso(job.created_at),
+        "started_at": _utc_iso(job.started_at),
+        "finished_at": _utc_iso(job.finished_at),
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class ExecutionResult:
     content_markdown: str
@@ -713,6 +737,23 @@ class ArtifactStore:
         self._clock = clock or (lambda: datetime.now(UTC))
         self._before_rename = before_rename or (lambda: None)
         self._after_validation = after_validation or (lambda: None)
+
+    def _manifest_path_for_job(self, company_id: str, job_id: str) -> Path:
+        return (
+            self._artifact_root
+            / "companies"
+            / company_id
+            / "jobs"
+            / job_id
+            / "manifest.json"
+        )
+
+    def manifest_path_for_job(self, company_id: str, job_id: str) -> Path:
+        """Return the one canonical manifest location for an artifact identity."""
+        return self._manifest_path_for_job(
+            _validate_identifier(company_id, "company_id"),
+            _validate_identifier(job_id, "job_id"),
+        )
 
     @contextmanager
     def _jobs_directory(self, company_id: str, *, create: bool) -> Iterator[int]:
@@ -1259,6 +1300,43 @@ class ArtifactStore:
             artifact_hashes=artifact_hashes,
             created_at=created_at,
         )
+
+    def _validated_payloads_for_job(self, job: SeoJob) -> dict[str, bytes]:
+        try:
+            _validate_job_provenance(job)
+        except ValueError as exc:
+            raise DataIntegrityError from exc
+        with self._jobs_directory(job.company_id, create=False) as jobs_fd:
+            bundle_fd = _open_directory_at(jobs_fd, job.job_id, create=False)
+            try:
+                payloads, manifest_value, _ = self._validated_bundle(
+                    bundle_fd, job.company_id, job.job_id
+                )
+            finally:
+                os.close(bundle_fd)
+        expected_provenance = _expected_job_manifest_provenance(job)
+        if any(
+            manifest_value[field_name] != value
+            for field_name, value in expected_provenance.items()
+        ):
+            raise DataIntegrityError
+        return payloads
+
+    def verify_manifest_for_job(self, job: SeoJob) -> Path:
+        """Verify a durable bundle before returning its canonical manifest path."""
+        self._validated_payloads_for_job(job)
+        return self._manifest_path_for_job(job.company_id, job.job_id)
+
+    def open_artifact_for_job(self, job: SeoJob, name: str) -> BinaryIO:
+        """Open one artifact only when its validated manifest exactly binds to ``job``."""
+        if name not in _ARTIFACT_NAMES:
+            raise ValueError("artifact name is not allowed")
+        if job.artifact_manifest_path != str(
+            self._manifest_path_for_job(job.company_id, job.job_id)
+        ):
+            raise DataIntegrityError
+        payloads = self._validated_payloads_for_job(job)
+        return cast(BinaryIO, BytesIO(payloads[name]))
 
     def open_artifact(self, company_id: str, job_id: str, name: str) -> BinaryIO:
         company_id = _validate_identifier(company_id, "company_id")

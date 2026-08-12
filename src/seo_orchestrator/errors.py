@@ -70,3 +70,12 @@ class ApprovalInvalid(RuntimeError):
 
     def __init__(self) -> None:
         super().__init__("approval does not match the durable snapshot and plan")
+
+
+class CallbackRejected(RuntimeError):
+    """Raised when a signed callback is replayed, stale, or cannot correlate safely."""
+
+    code = "CALLBACK_REJECTED"
+
+    def __init__(self) -> None:
+        super().__init__("callback request is not accepted")

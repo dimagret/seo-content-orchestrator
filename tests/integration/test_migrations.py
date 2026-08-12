@@ -1,4 +1,5 @@
 import sqlite3
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import cast
 
@@ -7,6 +8,10 @@ import pytest
 from seo_orchestrator.db import migrations as migration_module
 from seo_orchestrator.db.connection import connect, transaction
 from seo_orchestrator.db.migrations import migrate
+from seo_orchestrator.db.repositories import (
+    WebhookCallbackReceiptRepository,
+    WebhookNonceRepository,
+)
 from seo_orchestrator.domain import JobState
 from seo_orchestrator.services.jobs import JobService
 
@@ -22,6 +27,7 @@ EXPECTED_TABLES = {
     "approval_records",
     "artifact_manifests",
     "webhook_nonces",
+    "webhook_callback_receipts",
     "schema_migrations",
 }
 
@@ -85,6 +91,7 @@ def _insert_job(
     state: str,
     *,
     durable_plan: bool = True,
+    artifact_manifest_path: str | None = None,
 ) -> None:
     job_columns = {row[1] for row in conn.execute("PRAGMA table_info(jobs)")}
     if durable_plan and {"plan_json", "plan_fingerprint"} <= job_columns:
@@ -92,8 +99,9 @@ def _insert_job(
             """INSERT INTO jobs(
                    job_id, brief_id, brief_fingerprint, snapshot_id, snapshot_hash,
                    company_id, direction_id, audience_segment_id, state,
-                   created_by, created_at, plan_json, plan_fingerprint
-               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   created_by, created_at, plan_json, plan_fingerprint,
+                   artifact_manifest_path
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 job_id,
                 "brief-a",
@@ -108,6 +116,7 @@ def _insert_job(
                 "now",
                 b"{}",
                 "c" * 64,
+                artifact_manifest_path,
             ),
         )
         return
@@ -115,11 +124,12 @@ def _insert_job(
         """INSERT INTO jobs(
                job_id, brief_id, brief_fingerprint, snapshot_id, snapshot_hash,
                company_id, direction_id, audience_segment_id, state,
-               created_by, created_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               created_by, created_at, artifact_manifest_path
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             job_id, "brief-a", "b" * 64, "snapshot-a", "a" * 64,
             "company-a", "direction-a", "audience-a", state, "actor-a", "now",
+            artifact_manifest_path,
         ),
     )
 
@@ -142,14 +152,14 @@ def test_connect_configures_durability_and_busy_timeout(tmp_path: Path) -> None:
         conn.close()
 
 
-def test_migrate_applies_ordered_versions_through_three_idempotently(tmp_path: Path) -> None:
+def test_migrate_applies_ordered_versions_through_five_idempotently(tmp_path: Path) -> None:
     conn = connect(tmp_path / "orchestrator.db")
     try:
-        assert migrate(conn) == 3
-        assert migrate(conn) == 3
+        assert migrate(conn) == 5
+        assert migrate(conn) == 5
         assert conn.execute(
             "SELECT version FROM schema_migrations ORDER BY version"
-        ).fetchall() == [(1,), (2,), (3,)]
+        ).fetchall() == [(1,), (2,), (3,), (4,), (5,)]
         job_columns = {
             row[1]: (row[2], row[3]) for row in conn.execute("PRAGMA table_info(jobs)")
         }
@@ -185,7 +195,7 @@ def _create_committed_version_two_database(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def test_task7_d_migrate_upgrades_committed_v2_to_v3_without_rewriting_history(
+def test_migrate_upgrades_committed_v2_to_current_schema_without_rewriting_history(
     tmp_path: Path,
 ) -> None:
     conn = connect(tmp_path / "upgrade-v2.db")
@@ -195,10 +205,10 @@ def test_task7_d_migrate_upgrades_committed_v2_to_v3_without_rewriting_history(
         _insert_job(conn, "existing-v2-job", "RUNNING")
         conn.commit()
 
-        assert migrate(conn) == 3
+        assert migrate(conn) == 5
         assert conn.execute(
             "SELECT version FROM schema_migrations ORDER BY version"
-        ).fetchall() == [(1,), (2,), (3,)]
+        ).fetchall() == [(1,), (2,), (3,), (4,), (5,)]
         assert "superseded_by_job_id" in {
             row[1] for row in conn.execute("PRAGMA table_info(jobs)")
         }
@@ -235,10 +245,10 @@ def test_migrate_upgrades_v1_without_replaying_it_and_preserves_existing_rows(
         )
         conn.commit()
 
-        assert migrate(conn) == 3
+        assert migrate(conn) == 5
         assert conn.execute(
             "SELECT version FROM schema_migrations ORDER BY version"
-        ).fetchall() == [(1,), (2,), (3,)]
+        ).fetchall() == [(1,), (2,), (3,), (4,), (5,)]
         assert conn.execute(
             """SELECT job_id, state, plan_json, plan_fingerprint
                FROM jobs WHERE job_id = ?""",
@@ -250,7 +260,7 @@ def test_migrate_upgrades_v1_without_replaying_it_and_preserves_existing_rows(
             ("legacy-job",),
         ).fetchall() == [(None, "PLANNED", "before-upgrade")]
 
-        assert migrate(conn) == 3
+        assert migrate(conn) == 5
         assert conn.execute("SELECT COUNT(*) FROM jobs").fetchone() == (1,)
         assert conn.execute("SELECT COUNT(*) FROM job_transitions").fetchone() == (1,)
     finally:
@@ -325,6 +335,106 @@ def test_migration_creates_exact_authoritative_tables(tmp_path: Path) -> None:
             )
         }
         assert tables == EXPECTED_TABLES
+    finally:
+        conn.close()
+
+
+def test_nonce_conflict_does_not_mask_unrelated_integrity_errors(tmp_path: Path) -> None:
+    conn = connect(tmp_path / "orchestrator.db")
+    try:
+        migrate(conn)
+        conn.execute(
+            """CREATE TRIGGER reject_nonce_insert
+               BEFORE INSERT ON webhook_nonces
+               BEGIN
+                   SELECT RAISE(ABORT, 'forced nonce integrity failure');
+               END"""
+        )
+        received_at = datetime(2026, 8, 10, tzinfo=UTC)
+
+        with pytest.raises(sqlite3.IntegrityError, match="forced nonce integrity failure"):
+            WebhookNonceRepository(conn).consume_nonce(
+                "nonce-integrity-0123456789",
+                received_at,
+                received_at + timedelta(minutes=10),
+            )
+    finally:
+        conn.close()
+
+
+def test_callback_receipts_are_append_only(tmp_path: Path) -> None:
+    conn = connect(tmp_path / "orchestrator.db")
+    try:
+        migrate(conn)
+        _insert_brief_and_snapshot(conn)
+        _insert_job(conn, "callback-job", "QUEUED")
+        conn.execute(
+            """INSERT INTO webhook_callback_receipts(
+                   company_id, job_id, snapshot_hash, idempotency_key, accepted_at
+               ) VALUES (?, ?, ?, ?, ?)""",
+            ("company-a", "callback-job", "a" * 64, "callback-job", "now"),
+        )
+
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "UPDATE webhook_callback_receipts SET accepted_at = ?", ("later",)
+            )
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute("DELETE FROM webhook_callback_receipts")
+    finally:
+        conn.close()
+
+
+def test_callback_receipt_repository_does_not_hide_foreign_key_failure(tmp_path: Path) -> None:
+    conn = connect(tmp_path / "orchestrator.db")
+    try:
+        migrate(conn)
+
+        with pytest.raises(sqlite3.IntegrityError):
+            WebhookCallbackReceiptRepository(conn).record_receipt(
+                company_id="unknown-company",
+                job_id="unknown-job",
+                snapshot_hash="a" * 64,
+                idempotency_key="unknown-job",
+                received_at=datetime.now(UTC),
+            )
+    finally:
+        conn.close()
+
+
+def test_job_artifact_manifest_binding_is_initially_null_and_write_once(
+    tmp_path: Path,
+) -> None:
+    conn = connect(tmp_path / "orchestrator.db")
+    try:
+        migrate(conn)
+        _insert_brief_and_snapshot(conn)
+        with pytest.raises(sqlite3.IntegrityError):
+            _insert_job(
+                conn,
+                "prebound-job",
+                "SUCCEEDED",
+                artifact_manifest_path="/artifacts/companies/company-a/jobs/prebound-job/manifest.json",
+            )
+
+        _insert_job(conn, "succeeded-job", "SUCCEEDED")
+        manifest_path = "/artifacts/companies/company-a/jobs/succeeded-job/manifest.json"
+        conn.execute(
+            "UPDATE jobs SET artifact_manifest_path = ? WHERE job_id = ?",
+            (manifest_path, "succeeded-job"),
+        )
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "UPDATE jobs SET artifact_manifest_path = ? WHERE job_id = ?",
+                ("/other/manifest.json", "succeeded-job"),
+            )
+
+        _insert_job(conn, "running-job", "RUNNING")
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "UPDATE jobs SET artifact_manifest_path = ? WHERE job_id = ?",
+                ("/artifacts/companies/company-a/jobs/running-job/manifest.json", "running-job"),
+            )
     finally:
         conn.close()
 

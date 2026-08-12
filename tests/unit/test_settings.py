@@ -204,3 +204,13 @@ def test_direct_constructor_rejects_unsafe_socket_modes(mode: object) -> None:
 def test_environment_rejects_unsafe_or_malformed_socket_modes(mode: str) -> None:
     with pytest.raises(ValueError, match="SOCKET_MODE"):
         Settings.from_env({"SEO_WORKER_SOCKET_MODE": mode})
+
+
+def test_callback_hmac_key_path_is_absolute_and_independently_configurable() -> None:
+    settings = Settings.from_env(
+        {"SEO_CALLBACK_HMAC_KEY_PATH": "/run/seo-orchestrator/n8n-callback.key"}
+    )
+
+    assert settings.callback_hmac_key_path == Path("/run/seo-orchestrator/n8n-callback.key")
+    with pytest.raises(ValueError, match="CALLBACK_HMAC_KEY_PATH"):
+        Settings.from_env({"SEO_CALLBACK_HMAC_KEY_PATH": "relative/callback.key"})

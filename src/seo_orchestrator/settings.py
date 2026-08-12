@@ -12,7 +12,28 @@ from pathlib import Path, PurePosixPath
 _DEFAULT_DB_PATH = "/opt/data/seo-orchestrator-data/seo.db"
 _DEFAULT_ARTIFACT_ROOT = "/opt/data/seo-orchestrator-data/artifacts"
 _DEFAULT_LISTEN = "unix:/run/seo-orchestrator/worker.sock"
+_DEFAULT_API_TOKEN_PATH = "/opt/data/seo-orchestrator-data/worker-api.token"
+_DEFAULT_CALLBACK_HMAC_KEY_PATH = "/opt/data/seo-orchestrator-data/n8n-callback-hmac.key"
 _ALLOWED_ENVIRONMENTS = frozenset({"development", "test", "production"})
+
+
+def _unix_socket_path(listen: object) -> Path:
+    if type(listen) is not str:
+        raise ValueError("SEO_LISTEN must be a string")
+    socket_text = listen.removeprefix("unix:")
+    path_segments = socket_text.split("/")
+    if (
+        not listen.startswith("unix:")
+        or not socket_text
+        or "\0" in socket_text
+        or not PurePosixPath(socket_text).is_absolute()
+        or socket_text == "/"
+        or socket_text.endswith("/")
+        or "." in path_segments
+        or ".." in path_segments
+    ):
+        raise ValueError("SEO_LISTEN must use an absolute Unix socket path")
+    return Path(socket_text)
 
 
 @dataclass(frozen=True)
@@ -23,6 +44,8 @@ class Settings:
     db_path: Path
     artifact_root: Path
     listen: str
+    api_token_path: Path = Path(_DEFAULT_API_TOKEN_PATH)
+    callback_hmac_key_path: Path = Path(_DEFAULT_CALLBACK_HMAC_KEY_PATH)
     worker_socket_mode: int = 0o660
     max_active_jobs_per_user: int = 1
 
@@ -41,23 +64,24 @@ class Settings:
             raise ValueError("SEO_ARTIFACT_ROOT must be a pathlib.Path")
         if not self.artifact_root.is_absolute():
             raise ValueError("SEO_ARTIFACT_ROOT must be absolute")
+        if not isinstance(self.api_token_path, Path):
+            raise ValueError("SEO_API_TOKEN_PATH must be a pathlib.Path")
+        if not self.api_token_path.is_absolute():
+            raise ValueError("SEO_API_TOKEN_PATH must be absolute")
+        if not isinstance(self.callback_hmac_key_path, Path):
+            raise ValueError("SEO_CALLBACK_HMAC_KEY_PATH must be a pathlib.Path")
+        if not self.callback_hmac_key_path.is_absolute():
+            raise ValueError("SEO_CALLBACK_HMAC_KEY_PATH must be absolute")
         if not isinstance(self.listen, str):
             raise ValueError("SEO_LISTEN must be a string")
 
         if self.environment == "production":
-            socket_path = self.listen.removeprefix("unix:")
-            path_segments = socket_path.split("/")
-            if (
-                not self.listen.startswith("unix:")
-                or not socket_path
-                or "\0" in socket_path
-                or not PurePosixPath(socket_path).is_absolute()
-                or socket_path == "/"
-                or socket_path.endswith("/")
-                or "." in path_segments
-                or ".." in path_segments
-            ):
-                raise ValueError("Production SEO_LISTEN must use an absolute Unix socket path")
+            try:
+                _unix_socket_path(self.listen)
+            except ValueError as error:
+                raise ValueError(
+                    "Production SEO_LISTEN must use an absolute Unix socket path"
+                ) from error
 
         mode = self.worker_socket_mode
         if (
@@ -74,6 +98,11 @@ class Settings:
         if not isinstance(job_limit, int) or isinstance(job_limit, bool) or job_limit <= 0:
             raise ValueError("SEO_MAX_ACTIVE_JOBS_PER_USER must be a positive integer")
 
+    @property
+    def socket_path(self) -> Path:
+        """Return the validated Unix socket target required by the serve command."""
+        return _unix_socket_path(self.listen)
+
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> Settings:
         """Build settings from environment variables without reading global process state."""
@@ -81,12 +110,18 @@ class Settings:
         db_path_text = env.get("SEO_DB_PATH", _DEFAULT_DB_PATH)
         artifact_root_text = env.get("SEO_ARTIFACT_ROOT", _DEFAULT_ARTIFACT_ROOT)
         listen = env.get("SEO_LISTEN", _DEFAULT_LISTEN)
+        api_token_path_text = env.get("SEO_API_TOKEN_PATH", _DEFAULT_API_TOKEN_PATH)
+        callback_hmac_key_path_text = env.get(
+            "SEO_CALLBACK_HMAC_KEY_PATH", _DEFAULT_CALLBACK_HMAC_KEY_PATH
+        )
 
         for name, value in (
             ("SEO_ENV", environment),
             ("SEO_DB_PATH", db_path_text),
             ("SEO_ARTIFACT_ROOT", artifact_root_text),
             ("SEO_LISTEN", listen),
+            ("SEO_API_TOKEN_PATH", api_token_path_text),
+            ("SEO_CALLBACK_HMAC_KEY_PATH", callback_hmac_key_path_text),
         ):
             if not isinstance(value, str):
                 raise ValueError(f"{name} must be a string")
@@ -99,6 +134,14 @@ class Settings:
             artifact_root = Path(artifact_root_text)
         except (TypeError, ValueError) as error:
             raise ValueError("SEO_ARTIFACT_ROOT must be a valid path string") from error
+        try:
+            api_token_path = Path(api_token_path_text)
+        except (TypeError, ValueError) as error:
+            raise ValueError("SEO_API_TOKEN_PATH must be a valid path string") from error
+        try:
+            callback_hmac_key_path = Path(callback_hmac_key_path_text)
+        except (TypeError, ValueError) as error:
+            raise ValueError("SEO_CALLBACK_HMAC_KEY_PATH must be a valid path string") from error
 
         socket_mode_text = env.get("SEO_WORKER_SOCKET_MODE", "0660")
         if not isinstance(socket_mode_text, str):
@@ -120,6 +163,8 @@ class Settings:
             db_path=db_path,
             artifact_root=artifact_root,
             listen=listen,
+            api_token_path=api_token_path,
+            callback_hmac_key_path=callback_hmac_key_path,
             worker_socket_mode=worker_socket_mode,
             max_active_jobs_per_user=max_active_jobs_per_user,
         )

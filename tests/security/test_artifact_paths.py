@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -113,6 +114,69 @@ def test_open_artifact_rejects_names_outside_exact_allowlist(
 
     with pytest.raises(ValueError, match="name"):
         store.open_artifact("avtomalyar", "job-success-one", name)
+
+
+def test_open_artifact_for_job_requires_exact_durable_provenance_binding(
+    tmp_path: Path,
+) -> None:
+    store = ArtifactStore(tmp_path / "artifacts", clock=lambda: NOW)
+    job = _job()
+    store.write_bundle(job, _result())
+    bound_job = replace(
+        job,
+        artifact_manifest_path=str(
+            tmp_path
+            / "artifacts"
+            / "companies"
+            / job.company_id
+            / "jobs"
+            / job.job_id
+            / "manifest.json"
+        ),
+    )
+
+    with pytest.raises(DataIntegrityError):
+        store.open_artifact_for_job(
+            replace(bound_job, snapshot_hash="d" * 64), "content.md"
+        )
+
+
+def test_open_artifact_for_job_requires_exact_durable_manifest_path(
+    tmp_path: Path,
+) -> None:
+    store = ArtifactStore(tmp_path / "artifacts", clock=lambda: NOW)
+    job = _job()
+    store.write_bundle(job, _result())
+    manifest_path = (
+        tmp_path
+        / "artifacts"
+        / "companies"
+        / job.company_id
+        / "jobs"
+        / job.job_id
+        / "manifest.json"
+    )
+
+    with pytest.raises(DataIntegrityError):
+        store.open_artifact_for_job(job, "content.md")
+    with pytest.raises(DataIntegrityError):
+        store.open_artifact_for_job(
+            replace(
+                job,
+                artifact_manifest_path=str(
+                    manifest_path.parent.parent / "other-job" / "manifest.json"
+                ),
+            ),
+            "content.md",
+        )
+
+    artifact = store.open_artifact_for_job(
+        replace(job, artifact_manifest_path=str(manifest_path)), "content.md"
+    )
+    try:
+        assert artifact.read() == _result().content_markdown.encode("utf-8")
+    finally:
+        artifact.close()
 
 
 def test_write_bundle_rejects_noncanonical_job_scope_before_filesystem_write(

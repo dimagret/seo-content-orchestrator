@@ -8,6 +8,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
+from typing import BinaryIO
 
 from seo_orchestrator.canonical import sha256_fingerprint
 from seo_orchestrator.db.connection import transaction
@@ -38,6 +39,7 @@ from seo_orchestrator.errors import (
     NotFound,
     StateConflict,
 )
+from seo_orchestrator.services.artifacts import ArtifactStore
 
 _FINISHED_STATES = frozenset(
     {JobState.SUCCEEDED, JobState.FAILED_FINAL, JobState.CANCELED, JobState.EXPORTED}
@@ -213,6 +215,7 @@ class JobService:
         company_id: str,
         clock: Callable[[], datetime] | None = None,
         id_factory: Callable[[], str] | None = None,
+        artifact_store: ArtifactStore | None = None,
     ) -> None:
         self._conn = conn
         self._company_id = company_id
@@ -221,6 +224,79 @@ class JobService:
         self._approvals = ApprovalRepository(conn)
         self._clock = clock or (lambda: datetime.now(UTC))
         self._id_factory = id_factory or (lambda: f"job-{uuid.uuid4().hex}")
+        if artifact_store is not None and not isinstance(artifact_store, ArtifactStore):
+            raise TypeError("artifact_store must be an ArtifactStore")
+        self._artifact_store = artifact_store
+
+    def get_job(self, job_id: str) -> SeoJob:
+        """Return one scoped job only after its immutable snapshot verifies."""
+        record = self._jobs.get_job(self._company_id, job_id)
+        snapshot = self._snapshots.get_snapshot(self._company_id, record.snapshot_id)
+        return _domain_job_with_snapshot(record, snapshot)
+
+    def bind_artifact_manifest(self, job_id: str) -> SeoJob:
+        """Durably attach one published manifest to a succeeded job exactly once."""
+        if self._artifact_store is None:
+            raise ValueError("artifact_store is required to bind an artifact manifest")
+        with transaction(self._conn):
+            record = self._jobs.get_job(self._company_id, job_id)
+            snapshot = self._snapshots.get_snapshot(self._company_id, record.snapshot_id)
+            job = _domain_job_with_snapshot(record, snapshot)
+            if job.state is not JobState.SUCCEEDED:
+                raise StateConflict
+            manifest_path_text = str(
+                self._artifact_store.manifest_path_for_job(self._company_id, job_id)
+            )
+            if record.artifact_manifest_path is None:
+                verified_path_text = str(self._artifact_store.verify_manifest_for_job(job))
+                if verified_path_text != manifest_path_text:
+                    raise DataIntegrityError
+                if not self._jobs.bind_artifact_manifest(
+                    self._company_id, job_id, verified_path_text
+                ):
+                    raise StateConflict
+                record = self._jobs.get_job(self._company_id, job_id)
+            elif record.artifact_manifest_path != manifest_path_text:
+                raise DataIntegrityError
+            return _domain_job_with_snapshot(record, snapshot)
+
+    def open_artifact(self, job_id: str, name: str) -> BinaryIO:
+        """Open one durably bound artifact through the job authority boundary."""
+        if self._artifact_store is None:
+            raise ValueError("artifact_store is required to open an artifact")
+        job = self.get_job(job_id)
+        if job.state is not JobState.SUCCEEDED or job.artifact_manifest_path is None:
+            raise NotFound
+        return self._artifact_store.open_artifact_for_job(job, name)
+
+    def request_paid_approval(self, job_id: str) -> SeoJob:
+        """Move one verified planned job to its explicit manual approval gate."""
+        return self.transition(
+            job_id,
+            JobState.PLANNED,
+            JobState.AWAITING_PAID_APPROVAL,
+            "paid execution approval requested",
+        )
+
+    def cancel_job(self, job_id: str, expected_state: JobState) -> SeoJob:
+        """Cancel only a queued or running job, preserving durable CAS semantics."""
+        if expected_state not in {JobState.QUEUED, JobState.RUNNING}:
+            raise InvalidTransition
+        return self.transition(
+            job_id,
+            expected_state,
+            JobState.CANCELED,
+            "job canceled through Worker API",
+        )
+
+    def retry_job(self, job_id: str) -> SeoJob:
+        """Requeue only a durable retryable failure and increment its attempt."""
+        return self.transition(
+            job_id,
+            JobState.FAILED_RETRYABLE,
+            JobState.QUEUED,
+            "job retry requested through Worker API",
+        )
 
     def _paid_approval(self, record: JobRecord) -> ApprovalRecord:
         approval_id = record.approval_record_id
