@@ -1,0 +1,66 @@
+{
+  "fixture_notice": "Invented non-secret test data; not a claim about any real entity.",
+  "company_id": "avtomalyar",
+  "company_profile_id": "avtomalyar-profile",
+  "profile": {
+    "name": "Avtomalyar Studio",
+    "brand_summary": "Invented vehicle refinishing studio used only for deterministic tests.",
+    "products_services_overview": "Invented paint consultation and panel refinishing services.",
+    "commercial_model": "Direct service by appointment.",
+    "pricing_overview": "Written estimates after an invented inspection workflow.",
+    "service_geography": "Invented local service area.",
+    "value_propositions": ["Documented preparation steps"],
+    "proof_points": ["Invented sample portfolio"],
+    "certifications": ["Invented technical training"],
+    "case_references": ["Invented compact-car color matching case"],
+    "tools_and_process": ["Color assessment", "Surface preparation"],
+    "tone_of_voice": "Practical, calm, and specific.",
+    "positive_voice_examples": ["We explain each preparation step."],
+    "negative_voice_examples": ["A perfect result is guaranteed."],
+    "reading_level": "General audience.",
+    "allowed_claims": ["Written scope before work begins"],
+    "forbidden_claims": ["Guaranteed flawless result"],
+    "compliance_requirements": ["Mark all examples as invented"],
+    "default_language": "en",
+    "default_locale": "en-US"
+  },
+  "direction": {
+    "direction_id": "car-painting",
+    "data": {
+      "name": "Car Painting",
+      "offerings": ["Invented refinishing consultation"],
+      "category_context": "Invented vehicle paint service category.",
+      "prices_and_tariffs": "Written estimates after inspection.",
+      "direction_value_propositions": ["Preparation steps are documented"],
+      "direction_proof_points": ["Invented finish sample"],
+      "direction_cases": ["Invented hatchback panel example"],
+      "internal_link_catalog": ["/invented-car-painting"],
+      "default_page_structure": ["Service overview", "Preparation", "Estimate"],
+      "default_language": "en",
+      "default_locale": "en-US",
+      "allowed_claims": ["A written scope is provided"],
+      "forbidden_claims": ["Factory-perfect match guaranteed"]
+    },
+    "audience": {
+      "audience_segment_id": "private-car-owners",
+      "data": {
+        "name": "Private Car Owners",
+        "buyer_roles": ["Vehicle owner"],
+        "industry": "Consumer vehicle care",
+        "company_or_customer_size": "Individual customer",
+        "geography": "Invented local service area",
+        "jobs_to_be_done": ["Restore a vehicle panel finish"],
+        "pains_and_risks": ["Unclear preparation quality"],
+        "objections": ["Estimate uncertainty"],
+        "objection_responses": ["Explain inspection and written scope"],
+        "selection_criteria": ["Documented preparation process"],
+        "minimum_expectations": ["Clear estimate"],
+        "purchase_triggers": ["Visible paint damage"],
+        "budget_range": "Estimate after inspection",
+        "decision_cycle": "Several days",
+        "decision_participants": ["Vehicle owner"],
+        "preferred_content_formats": ["Service guide"]
+      }
+    }
+  }
+}
