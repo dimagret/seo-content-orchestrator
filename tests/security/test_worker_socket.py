@@ -38,7 +38,7 @@ def _settings(tmp_path: Path, socket_path: Path) -> Settings:
 
 @contextmanager
 def _short_socket_path() -> Iterator[Path]:
-    with TemporaryDirectory(dir="/opt/data/cache", prefix="uds-") as directory:
+    with TemporaryDirectory(prefix="uds-") as directory:
         yield Path(directory) / "worker.sock"
 
 
