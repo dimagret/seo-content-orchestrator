@@ -734,10 +734,9 @@ def _bind_persisted_paid_approval(
     approved_at: datetime,
     expires_at: datetime | None,
 ) -> None:
-    plan_fingerprint = fingerprint_plan(_plan())
-    snapshot_hash = conn.execute(
-        "SELECT snapshot_hash FROM jobs WHERE job_id = 'job-one'"
-    ).fetchone()[0]
+    snapshot_hash, plan_fingerprint = conn.execute(
+        "SELECT snapshot_hash, plan_fingerprint FROM jobs WHERE job_id = 'job-one'"
+    ).fetchone()
     conn.execute(
         """INSERT INTO approval_records(
                approval_record_id, job_id, approval_type, snapshot_hash,

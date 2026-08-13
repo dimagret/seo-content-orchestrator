@@ -941,8 +941,16 @@ git commit -m "feat: expose authenticated worker API"
 **Interfaces:**
 - Produces protocol `Executor.submit(job, snapshot) -> ExternalRun`
 - Produces protocol `Executor.poll(run) -> ExecutionStatus`
-- Produces protocol `Executor.cancel(run) -> None`
+- Produces protocol `Executor.cancel(run) -> ExecutionStatus` with synchronous provider-terminal `CANCELED` confirmation
 - Produces: `Runner.tick(limit: int = 1) -> int`
+
+**Executor trust boundary:** the runner accepts only an audited in-process adapter whose
+declared idempotency, lookup, cancellation, authority-deadline, and provider/model
+authorization capabilities are revalidated at each external-call boundary. The adapter
+must enforce supplied authority and approved provider/model identities at the actual
+side-effect boundary. A malicious Python implementation that lies about this contract is
+outside the runner's trust boundary and must not be installed; the signed n8n adapter is
+implemented and reviewed separately in Task 12.
 
 - [ ] **Step 1: Write deterministic executor and retry tests**
 

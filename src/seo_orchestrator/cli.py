@@ -21,6 +21,10 @@ from seo_orchestrator.api.app import create_app
 from seo_orchestrator.api.auth import load_api_token, load_hmac_key
 from seo_orchestrator.db.connection import connect
 from seo_orchestrator.db.migrations import migrate
+from seo_orchestrator.executors.base import Executor
+from seo_orchestrator.executors.mock import MockExecutor
+from seo_orchestrator.runner import Runner
+from seo_orchestrator.services.artifacts import ArtifactStore
 from seo_orchestrator.settings import Settings
 
 _WORKER_UID = 10000
@@ -308,6 +312,50 @@ def run_migrations(settings: Settings) -> None:
         connection.close()
 
 
+def run_worker(
+    settings: Settings,
+    *,
+    executor: Executor,
+    poll_interval_seconds: float = 1.0,
+    runner_id: str | None = None,
+) -> None:
+    """Run bounded ticks until SIGTERM, finishing the active tick before exit."""
+    if type(poll_interval_seconds) not in {int, float} or poll_interval_seconds <= 0:
+        raise ValueError("poll_interval_seconds must be positive")
+    if threading.current_thread() is not threading.main_thread():
+        raise RuntimeError("worker loop must run in the main thread")
+    selected_runner_id = runner_id or f"runner-{secrets.token_hex(16)}"
+    if type(selected_runner_id) is not str or not selected_runner_id.strip():
+        raise ValueError("runner_id must be a non-empty string")
+    stop_requested = threading.Event()
+
+    def request_stop(_signum: int, _frame: FrameType | None) -> None:
+        stop_requested.set()
+
+    previous_sigterm_handler = signal.signal(signal.SIGTERM, request_stop)
+    connection = None
+    try:
+        connection = connect(settings.db_path)
+        migrate(connection)
+        runner = Runner(
+            connection,
+            executor=executor,
+            artifact_store=ArtifactStore(settings.artifact_root),
+            runner_id=selected_runner_id,
+            lease_token_factory=lambda: secrets.token_hex(32),
+        )
+        while not stop_requested.is_set():
+            runner.tick(limit=1)
+            if not stop_requested.is_set():
+                stop_requested.wait(float(poll_interval_seconds))
+    finally:
+        try:
+            if connection is not None:
+                connection.close()
+        finally:
+            signal.signal(signal.SIGTERM, previous_sigterm_handler)
+
+
 def doctor(settings: Settings, *, owner_uid: int = _WORKER_UID) -> None:
     """Check local worker configuration and protected key readability without disclosure."""
     load_api_token(settings.api_token_path)
@@ -318,8 +366,14 @@ def doctor(settings: Settings, *, owner_uid: int = _WORKER_UID) -> None:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="seo-orchestrator")
     subcommands = parser.add_subparsers(dest="command", required=True)
-    for command in ("migrate", "serve", "worker", "doctor"):
+    for command in ("migrate", "serve", "doctor"):
         subcommands.add_parser(command)
+    worker = subcommands.add_parser("worker")
+    worker.add_argument(
+        "--mock",
+        action="store_true",
+        help="run the deterministic local executor (development/test only)",
+    )
     return parser
 
 
@@ -337,4 +391,9 @@ def main(argv: Sequence[str] | None = None) -> None:
     if command == "doctor":
         doctor(settings)
         return
-    raise SystemExit("worker runner is unavailable until Task 10")
+    if not cast(bool, getattr(arguments, "mock", False)):
+        raise SystemExit("worker requires explicit executor selection")
+    if settings.environment == "production":
+        raise SystemExit("production executor is unavailable until Task 12")
+    mock_state_path = settings.db_path.with_name(f"{settings.db_path.name}.mock-executor")
+    run_worker(settings, executor=MockExecutor(state_path=mock_state_path))

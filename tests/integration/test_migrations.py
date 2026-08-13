@@ -28,6 +28,9 @@ EXPECTED_TABLES = {
     "artifact_manifests",
     "webhook_nonces",
     "webhook_callback_receipts",
+    "job_execution_runs",
+    "job_stage_retry_budgets",
+    "runner_heartbeats",
     "schema_migrations",
 }
 
@@ -134,6 +137,41 @@ def _insert_job(
     )
 
 
+def _insert_execution_run(
+    conn: sqlite3.Connection,
+    *,
+    job_id: str,
+    attempt: int,
+    external_run_id: str,
+    external_status: str,
+    executor_name: str = "mock",
+) -> None:
+    now = "2026-08-12T10:00:00+00:00"
+    conn.execute(
+        """INSERT INTO job_execution_runs(
+               company_id, job_id, attempt, idempotency_key,
+               external_run_id, executor_name, external_accepted_at,
+               acceptance_observed_at, external_status, submission_attempted_at,
+               heartbeat_at, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            "company-a",
+            job_id,
+            attempt,
+            f"company-a:{job_id}:{attempt}",
+            external_run_id,
+            executor_name,
+            now,
+            now,
+            external_status,
+            now,
+            now,
+            now,
+            now,
+        ),
+    )
+
+
 def test_connect_enables_wal_and_foreign_keys(tmp_path: Path) -> None:
     conn = connect(tmp_path / "orchestrator.db")
     try:
@@ -152,20 +190,237 @@ def test_connect_configures_durability_and_busy_timeout(tmp_path: Path) -> None:
         conn.close()
 
 
-def test_migrate_applies_ordered_versions_through_five_idempotently(tmp_path: Path) -> None:
+def test_migrate_applies_ordered_versions_through_six_idempotently(tmp_path: Path) -> None:
     conn = connect(tmp_path / "orchestrator.db")
     try:
-        assert migrate(conn) == 5
-        assert migrate(conn) == 5
+        assert migrate(conn) == 6
+        assert migrate(conn) == 6
         assert conn.execute(
             "SELECT version FROM schema_migrations ORDER BY version"
-        ).fetchall() == [(1,), (2,), (3,), (4,), (5,)]
+        ).fetchall() == [(1,), (2,), (3,), (4,), (5,), (6,)]
         job_columns = {
             row[1]: (row[2], row[3]) for row in conn.execute("PRAGMA table_info(jobs)")
         }
         assert job_columns["plan_json"] == ("BLOB", 0)
         assert job_columns["plan_fingerprint"] == ("TEXT", 0)
         assert job_columns["superseded_by_job_id"] == ("TEXT", 0)
+        run_columns = {
+            row[1]: (row[2], row[3])
+            for row in conn.execute("PRAGMA table_info(job_execution_runs)")
+        }
+        assert run_columns == {
+            "company_id": ("TEXT", 1),
+            "job_id": ("TEXT", 1),
+            "attempt": ("INTEGER", 1),
+            "idempotency_key": ("TEXT", 1),
+            "external_run_id": ("TEXT", 0),
+            "executor_name": ("TEXT", 0),
+            "external_accepted_at": ("TEXT", 0),
+            "acceptance_observed_at": ("TEXT", 0),
+            "external_status": ("TEXT", 0),
+            "current_stage": ("TEXT", 0),
+            "next_action_at": ("TEXT", 0),
+            "submission_attempted_at": ("TEXT", 0),
+            "completion_observed_at": ("TEXT", 0),
+            "error_code": ("TEXT", 0),
+            "error_summary": ("TEXT", 0),
+            "result_json": ("BLOB", 0),
+            "result_hash": ("TEXT", 0),
+            "heartbeat_at": ("TEXT", 1),
+            "lease_token": ("TEXT", 0),
+            "lease_expires_at": ("TEXT", 0),
+            "reconciliation_count": ("INTEGER", 1),
+            "retry_stage_id": ("TEXT", 1),
+            "transient_failure_count": ("INTEGER", 1),
+            "created_at": ("TEXT", 1),
+            "updated_at": ("TEXT", 1),
+        }
+        index_sql = conn.execute(
+            "SELECT sql FROM sqlite_schema WHERE name = 'idx_job_execution_runs_idempotency'"
+        ).fetchone()[0]
+        assert "company_id, idempotency_key" in index_sql
+        external_index = next(
+            row
+            for row in conn.execute("PRAGMA index_list(job_execution_runs)")
+            if row[1] == "idx_job_execution_runs_external_identity"
+        )
+        assert external_index[2] == 1
+        assert conn.execute(
+            "PRAGMA index_info(idx_job_execution_runs_external_identity)"
+        ).fetchall() == [
+            (0, 5, "executor_name"),
+            (1, 4, "external_run_id"),
+        ]
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize(
+    ("column", "value"),
+    [
+        ("next_action_at", "not-a-time"),
+        ("next_action_at", "2026-08-12T10:00:00"),
+        ("next_action_at", "2026-08-12T13:00:00+03:00"),
+        ("next_action_at", "2026-08-12T10:00:00Z"),
+        ("lease_expires_at", "not-a-time"),
+        ("lease_expires_at", "2026-08-12T10:00:00"),
+    ],
+)
+def test_execution_scheduler_timestamps_must_be_canonical_utc(
+    tmp_path: Path,
+    column: str,
+    value: str,
+) -> None:
+    conn = connect(tmp_path / f"scheduler-time-{column}-{value[-3:]}.db")
+    try:
+        migrate(conn)
+        _insert_brief_and_snapshot(conn)
+        _insert_job(conn, "job-one", "RUNNING")
+        now = "2026-08-12T10:00:00+00:00"
+        conn.execute(
+            """INSERT INTO job_execution_runs(
+                   company_id, job_id, attempt, idempotency_key,
+                   heartbeat_at, created_at, updated_at
+               ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            ("company-a", "job-one", 1, "company-a:job-one:1", now, now, now),
+        )
+        conn.commit()
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                f"UPDATE job_execution_runs SET {column} = ? WHERE job_id = ?",
+                (value, "job-one"),
+            )
+        conn.rollback()
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "not-a-time",
+        "2026-08-12T10:00:00",
+        "2026-08-12T13:00:00+03:00",
+        "2026-08-12T10:00:00Z",
+    ],
+)
+def test_job_stale_timestamp_must_be_canonical_utc(tmp_path: Path, value: str) -> None:
+    conn = connect(tmp_path / f"job-time-{value[-3:]}.db")
+    try:
+        migrate(conn)
+        _insert_brief_and_snapshot(conn)
+        _insert_job(conn, "job-one", "RUNNING")
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute("UPDATE jobs SET started_at = ? WHERE job_id = ?", (value, "job-one"))
+        conn.rollback()
+    finally:
+        conn.close()
+
+
+def test_execution_run_identity_is_attempt_scoped_and_owned_by_one_attempt(
+    tmp_path: Path,
+) -> None:
+    conn = connect(tmp_path / "execution-run-identity.db")
+    try:
+        migrate(conn)
+        _insert_brief_and_snapshot(conn)
+        _insert_job(conn, "job-one", "RUNNING")
+        now = "2026-08-12T10:00:00+00:00"
+        _insert_execution_run(
+            conn,
+            job_id="job-one",
+            attempt=1,
+            external_run_id="external-one",
+            external_status="FAILED_RETRYABLE",
+        )
+        conn.execute("UPDATE jobs SET attempt = 2 WHERE job_id = ?", ("job-one",))
+        conn.commit()
+
+        with pytest.raises(sqlite3.IntegrityError):
+            _insert_execution_run(
+                conn,
+                job_id="job-one",
+                attempt=2,
+                external_run_id="external-one",
+                external_status="RUNNING",
+            )
+        conn.rollback()
+        _insert_execution_run(
+            conn,
+            job_id="job-one",
+            attempt=3,
+            external_run_id="external-one",
+            external_status="ACCEPTED",
+            executor_name="other-executor",
+        )
+        _insert_execution_run(
+            conn,
+            job_id="job-one",
+            attempt=2,
+            external_run_id="external-two",
+            external_status="RUNNING",
+        )
+        conn.commit()
+
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                """INSERT INTO job_execution_runs(
+                       company_id, job_id, attempt, idempotency_key,
+                       heartbeat_at, created_at, updated_at
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                ("company-a", "job-one", 3, "wrong-key", now, now, now),
+            )
+        conn.rollback()
+
+        conn.execute("UPDATE jobs SET state = 'SUCCEEDED' WHERE job_id = 'job-one'")
+        _insert_job(conn, "job-two", "RUNNING")
+        with pytest.raises(sqlite3.IntegrityError):
+            _insert_execution_run(
+                conn,
+                job_id="job-two",
+                attempt=1,
+                external_run_id="external-one",
+                external_status="RUNNING",
+            )
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize(
+    ("stored_status", "replacement_status"),
+    [
+        ("SUCCEEDED", "CANCELED"),
+        ("FAILED_RETRYABLE", "RUNNING"),
+        ("FAILED_FINAL", "RUNNING"),
+        ("CANCELED", "SUCCEEDED"),
+        ("RUNNING", "ACCEPTED"),
+        ("RUNNING", None),
+    ],
+)
+def test_execution_status_cannot_regress_or_overwrite_terminal_truth(
+    tmp_path: Path,
+    stored_status: str,
+    replacement_status: str | None,
+) -> None:
+    conn = connect(tmp_path / f"status-{stored_status}-{replacement_status}.db")
+    try:
+        migrate(conn)
+        _insert_brief_and_snapshot(conn)
+        _insert_job(conn, "job-one", "RUNNING")
+        _insert_execution_run(
+            conn,
+            job_id="job-one",
+            attempt=1,
+            external_run_id="external-one",
+            external_status=stored_status,
+        )
+        conn.commit()
+
+        with pytest.raises(sqlite3.IntegrityError, match="external status cannot regress"):
+            conn.execute(
+                "UPDATE job_execution_runs SET external_status = ? WHERE job_id = ?",
+                (replacement_status, "job-one"),
+            )
     finally:
         conn.close()
 
@@ -205,10 +460,10 @@ def test_migrate_upgrades_committed_v2_to_current_schema_without_rewriting_histo
         _insert_job(conn, "existing-v2-job", "RUNNING")
         conn.commit()
 
-        assert migrate(conn) == 5
+        assert migrate(conn) == 6
         assert conn.execute(
             "SELECT version FROM schema_migrations ORDER BY version"
-        ).fetchall() == [(1,), (2,), (3,), (4,), (5,)]
+        ).fetchall() == [(1,), (2,), (3,), (4,), (5,), (6,)]
         assert "superseded_by_job_id" in {
             row[1] for row in conn.execute("PRAGMA table_info(jobs)")
         }
@@ -245,10 +500,10 @@ def test_migrate_upgrades_v1_without_replaying_it_and_preserves_existing_rows(
         )
         conn.commit()
 
-        assert migrate(conn) == 5
+        assert migrate(conn) == 6
         assert conn.execute(
             "SELECT version FROM schema_migrations ORDER BY version"
-        ).fetchall() == [(1,), (2,), (3,), (4,), (5,)]
+        ).fetchall() == [(1,), (2,), (3,), (4,), (5,), (6,)]
         assert conn.execute(
             """SELECT job_id, state, plan_json, plan_fingerprint
                FROM jobs WHERE job_id = ?""",
@@ -260,7 +515,7 @@ def test_migrate_upgrades_v1_without_replaying_it_and_preserves_existing_rows(
             ("legacy-job",),
         ).fetchall() == [(None, "PLANNED", "before-upgrade")]
 
-        assert migrate(conn) == 5
+        assert migrate(conn) == 6
         assert conn.execute("SELECT COUNT(*) FROM jobs").fetchone() == (1,)
         assert conn.execute("SELECT COUNT(*) FROM job_transitions").fetchone() == (1,)
     finally:
