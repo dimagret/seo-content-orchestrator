@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://verexela.local/contracts/n8n/universal-execution-v1.json",
+  "title": "SEO Orchestrator universal n8n execution request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "job_id",
+    "brief_id",
+    "brief_fingerprint",
+    "snapshot_hash",
+    "attempt",
+    "approved_plan_fingerprint",
+    "approval_record_id",
+    "authority_expires_at",
+    "approved_model_ids",
+    "approved_provider_ids",
+    "execution_snapshot"
+  ],
+  "properties": {
+    "job_id": { "$ref": "#/$defs/identifier" },
+    "brief_id": { "$ref": "#/$defs/identifier" },
+    "brief_fingerprint": { "$ref": "#/$defs/sha256" },
+    "snapshot_hash": { "$ref": "#/$defs/sha256" },
+    "attempt": { "type": "integer", "minimum": 1 },
+    "approved_plan_fingerprint": { "$ref": "#/$defs/sha256" },
+    "approval_record_id": { "$ref": "#/$defs/identifier" },
+    "authority_expires_at": { "type": "string", "format": "date-time" },
+    "approved_model_ids": { "$ref": "#/$defs/nonEmptyIdentifiers" },
+    "approved_provider_ids": { "$ref": "#/$defs/nonEmptyIdentifiers" },
+    "execution_snapshot": { "$ref": "#/$defs/executionSnapshot" }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{1,63}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "nonEmptyIdentifiers": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      }
+    },
+    "executionSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "snapshot_id",
+        "brief_id",
+        "company_id",
+        "company_profile_version",
+        "direction_id",
+        "direction_version",
+        "audience_segment_id",
+        "audience_version",
+        "prompt_set_version",
+        "compiled_context",
+        "snapshot_hash",
+        "created_at"
+      ],
+      "properties": {
+        "snapshot_id": { "$ref": "#/$defs/identifier" },
+        "brief_id": { "$ref": "#/$defs/identifier" },
+        "company_id": { "$ref": "#/$defs/identifier" },
+        "company_profile_version": { "type": "integer", "minimum": 1 },
+        "direction_id": { "$ref": "#/$defs/identifier" },
+        "direction_version": { "type": "integer", "minimum": 1 },
+        "audience_segment_id": { "$ref": "#/$defs/identifier" },
+        "audience_version": { "type": "integer", "minimum": 1 },
+        "prompt_set_version": { "type": "integer", "minimum": 1 },
+        "compiled_context": { "type": "object" },
+        "snapshot_hash": { "$ref": "#/$defs/sha256" },
+        "created_at": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "x-seo-wrapper": {
+    "version": 1,
+    "signature": "HMAC-SHA256",
+    "canonicalInput": "METHOD\\nPATH\\nUNIX_TIMESTAMP\\nNONCE\\nSHA256_HEX(BODY)",
+    "headers": [
+      "X-SEO-Timestamp",
+      "X-SEO-Nonce",
+      "X-SEO-Idempotency-Key",
+      "X-SEO-Signature"
+    ],
+    "maxTimestampSkewSeconds": 300,
+    "replayedNonceRejected": true,
+    "nonceStoreDurable": true,
+    "durableSemanticIdempotency": true,
+    "sideEffectFreeLookup": true,
+    "idempotentCancel": true,
+    "cancelConfirmsTerminal": true,
+    "authorityDeadlineEnforced": true,
+    "configurationAuthorizationEnforced": true,
+    "endpoints": {
+      "submit": "POST /v1/executions",
+      "lookup": "POST /v1/executions/lookup",
+      "poll": "GET /v1/executions/{external_run_id}",
+      "cancel": "POST /v1/executions/{external_run_id}/cancel"
+    }
+  }
+}

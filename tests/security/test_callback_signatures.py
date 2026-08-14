@@ -29,6 +29,7 @@ def test_signature_canonical_input_is_frozen_and_verifies() -> None:
         _KEY,
         signature,
         now=_TIMESTAMP + 300,
+        nonce_consumer=lambda _nonce: True,
     )
 
 
@@ -55,6 +56,7 @@ def test_signature_verification_rejects_stale_or_tampered_values(
             _KEY,
             signature,
             now=now,
+            nonce_consumer=lambda _nonce: True,
         )
 
 
