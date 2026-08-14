@@ -5,9 +5,10 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from fastapi import APIRouter, Depends, Request, status
+from pydantic import Field, model_validator
 
 from seo_orchestrator.db.connection import connect, transaction
-from seo_orchestrator.domain.models import DomainModel, Identifier
+from seo_orchestrator.domain.models import DomainModel, Identifier, StrictPositiveInt
 from seo_orchestrator.services.briefs import (
     BriefService,
     SeoBriefDraft,
@@ -31,6 +32,26 @@ class BriefScope(DomainModel):
     actor_id: Identifier
 
 
+class ValidateBriefRequest(BriefScope):
+    """Explicit optimistic versions required for the validating transition."""
+
+    expected_version: StrictPositiveInt
+    expected_profile_version: StrictPositiveInt
+
+
+class UpdateBriefRequest(UpdateBrief):
+    """Worker update contract requires both optimistic concurrency versions."""
+
+    expected_version: StrictPositiveInt | None = Field(...)
+    expected_profile_version: StrictPositiveInt | None = Field(...)
+
+    @model_validator(mode="after")
+    def require_versions(self) -> UpdateBriefRequest:
+        if self.expected_version is None or self.expected_profile_version is None:
+            raise ValueError("both expected versions are required")
+        return self
+
+
 def create_brief_router(
     settings: Settings, require_bearer: Callable[[Request], None]
 ) -> APIRouter:
@@ -49,7 +70,7 @@ def create_brief_router(
             connection.close()
 
     @router.patch("/v1/briefs/{brief_id}")
-    def update_brief(brief_id: Identifier, command: UpdateBrief) -> SeoBriefDraft:
+    def update_brief(brief_id: Identifier, command: UpdateBriefRequest) -> SeoBriefDraft:
         if command.brief_id != brief_id:
             raise ValueError("brief_id path and body must match")
         connection = connect(settings.db_path)
@@ -60,7 +81,9 @@ def create_brief_router(
             connection.close()
 
     @router.post("/v1/briefs/{brief_id}/validate")
-    def validate_brief(brief_id: Identifier, scope: BriefScope) -> ValidatedBrief:
+    def validate_brief(
+        brief_id: Identifier, scope: ValidateBriefRequest
+    ) -> ValidatedBrief:
         connection = connect(settings.db_path)
         try:
             with transaction(connection):
@@ -68,6 +91,8 @@ def create_brief_router(
                     company_id=scope.company_id,
                     brief_id=brief_id,
                     actor_id=scope.actor_id,
+                    expected_version=scope.expected_version,
+                    expected_profile_version=scope.expected_profile_version,
                 )
         finally:
             connection.close()

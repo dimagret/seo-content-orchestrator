@@ -7,6 +7,7 @@ import pytest
 
 from seo_orchestrator.db.connection import connect, transaction
 from seo_orchestrator.db.migrations import migrate
+from seo_orchestrator.errors import VersionConflict
 from seo_orchestrator.services.briefs import BriefService, UpdateBrief, ValidatedBrief
 from seo_orchestrator.services.company_cards import (
     AudienceData,
@@ -241,6 +242,19 @@ def test_validate_brief_returns_exact_complete_domain_value_and_marks_saved_draf
         assert conn.execute(
             "SELECT status FROM brief_drafts WHERE brief_id = ?", (draft.brief_id,)
         ).fetchone() == ("validated",)
+        frozen = service.get_brief("avtomalyar", draft.brief_id, "invented-actor")
+        assert frozen.version == 3
+        with transaction(conn), pytest.raises(VersionConflict):
+            service.update_brief(
+                UpdateBrief(
+                    brief_id=draft.brief_id,
+                    actor_id="invented-actor",
+                    company_id="avtomalyar",
+                    expected_version=2,
+                    expected_profile_version=1,
+                    goal="A stale pre-validation revision cannot reopen the brief",
+                )
+            )
     finally:
         conn.close()
 
@@ -433,5 +447,40 @@ def test_validate_incomplete_brief_is_side_effect_free_and_caller_can_rollback_s
         assert conn.execute(
             "SELECT status FROM brief_drafts WHERE brief_id = ?", (draft.brief_id,)
         ).fetchone() == ("draft",)
+    finally:
+        conn.close()
+
+
+def test_brief_update_uses_atomic_draft_version_compare_and_swap(tmp_path: Path) -> None:
+    conn = connect(tmp_path / "brief-cas.db")
+    try:
+        migrate(conn)
+        service = BriefService(conn, clock=lambda: NOW, id_factory=lambda: "brief-cas-one")
+        with transaction(conn):
+            _seed_company(conn)
+            draft = service.start_brief("invented-actor", "avtomalyar")
+            assert draft.version == 1
+            updated = service.update_brief(
+                UpdateBrief(
+                    brief_id=draft.brief_id,
+                    actor_id="invented-actor",
+                    company_id="avtomalyar",
+                    expected_version=1,
+                    expected_profile_version=1,
+                    goal="first",
+                )
+            )
+            assert updated.version == 2
+            with pytest.raises(VersionConflict):
+                service.update_brief(
+                    UpdateBrief(
+                        brief_id=draft.brief_id,
+                        actor_id="invented-actor",
+                        company_id="avtomalyar",
+                        expected_version=1,
+                        expected_profile_version=1,
+                        goal="stale",
+                    )
+                )
     finally:
         conn.close()

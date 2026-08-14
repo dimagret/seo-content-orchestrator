@@ -20,7 +20,7 @@ from seo_orchestrator.domain import (
     ExecutionSnapshot,
     SeoBrief,
 )
-from seo_orchestrator.errors import CompanyArchived, DataIntegrityError, NotFound
+from seo_orchestrator.errors import CompanyArchived, DataIntegrityError, NotFound, VersionConflict
 
 _SNAPSHOT_CONTEXT_KEYS = frozenset(
     {
@@ -419,13 +419,19 @@ class BriefRepository:
             updated_at=row[11],
         )
 
-    def update_draft(self, scoped_company_id: str, record: BriefDraftRecord) -> None:
+    def update_draft(
+        self,
+        scoped_company_id: str,
+        record: BriefDraftRecord,
+        *,
+        expected_brief_json: bytes,
+    ) -> None:
         cursor = self._conn.execute(
             """UPDATE brief_drafts
                SET company_id = ?, company_profile_version = ?, direction_id = ?,
                    direction_version = ?, audience_segment_id = ?, audience_version = ?,
                    brief_json = ?, status = ?, updated_at = ?
-               WHERE company_id = ? AND brief_id = ? AND created_by = ?""",
+               WHERE company_id = ? AND brief_id = ? AND created_by = ? AND brief_json = ?""",
             (
                 record.company_id,
                 record.company_profile_version,
@@ -439,10 +445,11 @@ class BriefRepository:
                 scoped_company_id,
                 record.brief_id,
                 record.created_by,
+                expected_brief_json,
             ),
         )
         if cursor.rowcount != 1:
-            raise NotFound
+            raise VersionConflict
 
     def add_brief(self, brief: SeoBrief) -> None:
         """Persist an already complete domain brief as validated."""
