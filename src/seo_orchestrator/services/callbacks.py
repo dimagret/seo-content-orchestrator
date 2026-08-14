@@ -25,19 +25,8 @@ class CallbackService:
         self._nonces = WebhookNonceRepository(conn)
         self._receipts = WebhookCallbackReceiptRepository(conn)
 
-    def accept_callback(
-        self,
-        *,
-        job_id: str,
-        snapshot_hash: str,
-        idempotency_key: str,
-        nonce: str,
-        signed_timestamp: int,
-        received_at: datetime,
-    ) -> bool:
-        """Accept one active scoped callback exactly once inside a write transaction."""
-        if type(idempotency_key) is not str or idempotency_key != job_id:
-            raise CallbackRejected
+    @staticmethod
+    def _nonce_expiry(signed_timestamp: int, received_at: datetime) -> tuple[datetime, datetime]:
         if (
             type(received_at) is not datetime
             or received_at.tzinfo is None
@@ -51,12 +40,34 @@ class CallbackService:
             signed_at = datetime.fromtimestamp(signed_timestamp, UTC)
         except (OverflowError, OSError, ValueError) as exc:
             raise ValueError("callback signature timestamp is out of range") from exc
-        # Signatures are valid at the inclusive whole-second skew boundary. Keep the
-        # nonce one further second after that window so repository pruning cannot
-        # reopen a replay at its final valid instant.
         expires_at = max(received_at, signed_at) + timedelta(
             seconds=MAX_TIMESTAMP_SKEW_SECONDS + 1
         )
+        return received_at, expires_at
+
+    def nonce_is_fresh(self, nonce: str) -> bool:
+        """Reject known replay before correlation; atomic consume remains in acceptance."""
+        if type(nonce) is not str or not nonce:
+            return False
+        row = self._conn.execute(
+            "SELECT 1 FROM webhook_nonces WHERE nonce = ?", (nonce,)
+        ).fetchone()
+        return row is None
+
+    def accept_callback(
+        self,
+        *,
+        job_id: str,
+        snapshot_hash: str,
+        idempotency_key: str,
+        nonce: str,
+        signed_timestamp: int,
+        received_at: datetime,
+    ) -> bool:
+        """Accept one active scoped callback exactly once inside a write transaction."""
+        if type(idempotency_key) is not str or idempotency_key != job_id:
+            raise CallbackRejected
+        received_at, expires_at = self._nonce_expiry(signed_timestamp, received_at)
         with transaction(self._conn):
             try:
                 job = JobService(self._conn, company_id=self._company_id).get_job(job_id)
@@ -64,11 +75,7 @@ class CallbackService:
                 raise CallbackRejected from exc
             if job.snapshot_hash != snapshot_hash:
                 raise CallbackRejected
-            if not self._nonces.consume_nonce(
-                nonce,
-                received_at,
-                expires_at,
-            ):
+            if not self._nonces.consume_nonce(nonce, received_at, expires_at):
                 raise CallbackRejected
             inserted = self._receipts.record_receipt(
                 company_id=self._company_id,

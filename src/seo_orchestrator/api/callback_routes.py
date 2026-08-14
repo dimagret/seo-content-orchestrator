@@ -75,33 +75,36 @@ def create_callback_router(settings: Settings) -> APIRouter:
         idempotency_key = _required_single_header(request, "x-seo-idempotency-key")
         signature = _required_single_header(request, "x-seo-signature")
         try:
-            verify_request(
-                request.method,
-                request.url.path,
-                timestamp,
-                nonce,
-                body,
-                load_hmac_key(settings.callback_hmac_key_path),
-                signature,
-                now=int(time.time()),
-            )
-        except SignatureVerificationError as exc:
-            raise ApiAuthenticationError("unauthorized") from exc
-        try:
             payload = CallbackPayload.model_validate_json(body)
         except ValidationError as exc:
             raise ApiAuthenticationError("unauthorized") from exc
         if idempotency_key != payload.job_id:
             raise ApiAuthenticationError("unauthorized")
+        received_at = datetime.now(UTC)
         connection = connect(settings.db_path)
         try:
-            CallbackService(connection, company_id=payload.company_id).accept_callback(
+            service = CallbackService(connection, company_id=payload.company_id)
+            try:
+                verify_request(
+                    request.method,
+                    request.url.path,
+                    timestamp,
+                    nonce,
+                    body,
+                    load_hmac_key(settings.callback_hmac_key_path),
+                    signature,
+                    now=int(time.time()),
+                    nonce_consumer=service.nonce_is_fresh,
+                )
+            except SignatureVerificationError as exc:
+                raise ApiAuthenticationError("unauthorized") from exc
+            service.accept_callback(
                 job_id=payload.job_id,
                 snapshot_hash=payload.snapshot_hash,
                 idempotency_key=idempotency_key,
                 nonce=nonce,
                 signed_timestamp=timestamp,
-                received_at=datetime.now(UTC),
+                received_at=received_at,
             )
         finally:
             connection.close()

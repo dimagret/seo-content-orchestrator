@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import re
+from collections.abc import Callable
 
 MAX_TIMESTAMP_SKEW_SECONDS = 300
 _NONCE_PATTERN = re.compile(r"[A-Za-z0-9_-]{16,128}\Z")
@@ -101,8 +102,9 @@ def verify_request(
     signature: str,
     *,
     now: int,
+    nonce_consumer: Callable[[str], bool],
 ) -> None:
-    """Fail closed unless signature and bounded timestamp are both valid."""
+    """Fail closed unless signature, timestamp, and required replay guard are valid."""
     verified_timestamp = _validated_timestamp(timestamp)
     verified_now = _validated_timestamp(now)
     if (
@@ -114,4 +116,10 @@ def verify_request(
         raise _invalid()
     expected = sign_request(method, path, verified_timestamp, nonce, body, key)
     if not hmac.compare_digest(expected, signature):
+        raise _invalid()
+    try:
+        consumed = nonce_consumer(_validated_nonce(nonce))
+    except Exception as exc:
+        raise _invalid() from exc
+    if consumed is not True:
         raise _invalid()
