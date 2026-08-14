@@ -234,6 +234,131 @@ class JobService:
         snapshot = self._snapshots.get_snapshot(self._company_id, record.snapshot_id)
         return _domain_job_with_snapshot(record, snapshot)
 
+    def prepare_execution(self, job_id: str) -> tuple[SeoJob, ExecutionSnapshot]:
+        """Revalidate one queued approval and immutable input before external I/O."""
+        with transaction(self._conn):
+            record = self._jobs.get_job(self._company_id, job_id)
+            job = _domain_job(record)
+            if job.state is not JobState.QUEUED or record.superseded_by_job_id is not None:
+                raise StateConflict
+            _require_plan_integrity(record)
+            snapshot = self._snapshots.get_snapshot(self._company_id, record.snapshot_id)
+            _require_job_snapshot_integrity(record, snapshot)
+            approval = self._paid_approval(record)
+            now = _clock_datetime(self._clock())
+            if (
+                approval.approved_at > now
+                or (
+                    approval.expires_at is not None
+                    and (
+                        approval.expires_at <= approval.approved_at
+                        or approval.expires_at <= now
+                    )
+                )
+            ):
+                raise ApprovalInvalid
+            return _domain_job_with_snapshot(record, snapshot), snapshot
+
+    def resume_dispatch(self, job_id: str) -> tuple[SeoJob, ExecutionSnapshot]:
+        """Revalidate immutable inputs and current approval for dispatch replay."""
+        with transaction(self._conn):
+            record = self._jobs.get_job(self._company_id, job_id)
+            job = _domain_job(record)
+            if (
+                job.state is not JobState.RUNNING
+                or record.current_stage != "dispatching"
+                or record.superseded_by_job_id is not None
+            ):
+                raise StateConflict
+            _require_plan_integrity(record)
+            snapshot = self._snapshots.get_snapshot(self._company_id, record.snapshot_id)
+            _require_job_snapshot_integrity(record, snapshot)
+            approval = self._paid_approval(record)
+            now = _clock_datetime(self._clock())
+            if (
+                approval.approved_at > now
+                or (
+                    approval.expires_at is not None
+                    and (
+                        approval.expires_at <= approval.approved_at
+                        or approval.expires_at <= now
+                    )
+                )
+            ):
+                raise ApprovalInvalid
+            return _domain_job_with_snapshot(record, snapshot), snapshot
+
+    def recover_dispatch_identity(
+        self, job_id: str
+    ) -> tuple[SeoJob, ExecutionSnapshot]:
+        """Revalidate immutable identity for side-effect-free existing-run lookup."""
+        with transaction(self._conn):
+            record = self._jobs.get_job(self._company_id, job_id)
+            job = _domain_job(record)
+            if (
+                job.state is not JobState.RUNNING
+                or record.current_stage != "dispatching"
+                or record.superseded_by_job_id is not None
+            ):
+                raise StateConflict
+            _require_plan_integrity(record)
+            snapshot = self._snapshots.get_snapshot(self._company_id, record.snapshot_id)
+            _require_job_snapshot_integrity(record, snapshot)
+            self._paid_approval(record)
+            return _domain_job_with_snapshot(record, snapshot), snapshot
+
+    def recover_canceled_dispatch(
+        self, job_id: str
+    ) -> tuple[SeoJob, ExecutionSnapshot]:
+        """Revalidate immutable identity for side-effect-free canceled-run lookup."""
+        with transaction(self._conn):
+            record = self._jobs.get_job(self._company_id, job_id)
+            job = _domain_job(record)
+            if (
+                job.state is not JobState.CANCELED
+                or record.current_stage != "dispatching"
+                or record.superseded_by_job_id is not None
+            ):
+                raise StateConflict
+            _require_plan_integrity(record)
+            snapshot = self._snapshots.get_snapshot(self._company_id, record.snapshot_id)
+            _require_job_snapshot_integrity(record, snapshot)
+            self._paid_approval(record)
+            return _domain_job_with_snapshot(record, snapshot), snapshot
+
+    def validate_external_cancellation(self, job_id: str) -> ExecutionPlan:
+        """Validate immutable launch authority before stopping an existing run."""
+        with transaction(self._conn):
+            record = self._jobs.get_job(self._company_id, job_id)
+            job = _domain_job(record)
+            if (
+                job.state not in {JobState.RUNNING, JobState.CANCELED}
+                or record.superseded_by_job_id is not None
+            ):
+                raise StateConflict
+            plan = _require_plan_integrity(record)
+            snapshot = self._snapshots.get_snapshot(self._company_id, record.snapshot_id)
+            _require_job_snapshot_integrity(record, snapshot)
+            self._paid_approval(record)
+            return plan
+
+    def launch_approval_window(self, job_id: str) -> tuple[datetime, datetime | None]:
+        """Return the immutable paid-approval window after provenance verification."""
+        with transaction(self._conn):
+            record = self._jobs.get_job(self._company_id, job_id)
+            _require_plan_integrity(record)
+            snapshot = self._snapshots.get_snapshot(self._company_id, record.snapshot_id)
+            _require_job_snapshot_integrity(record, snapshot)
+            approval = self._paid_approval(record)
+            return approval.approved_at, approval.expires_at
+
+    def execution_plan(self, job_id: str) -> ExecutionPlan:
+        """Return the verified immutable plan for one company-scoped job."""
+        record = self._jobs.get_job(self._company_id, job_id)
+        snapshot = self._snapshots.get_snapshot(self._company_id, record.snapshot_id)
+        _require_job_snapshot_integrity(record, snapshot)
+        return _require_plan_integrity(record)
+
     def bind_artifact_manifest(self, job_id: str) -> SeoJob:
         """Durably attach one published manifest to a succeeded job exactly once."""
         if self._artifact_store is None:
@@ -396,6 +521,9 @@ class JobService:
         expected_state: JobState,
         target_state: JobState,
         reason: str,
+        *,
+        error_code: str | None = None,
+        current_stage: str | None = None,
     ) -> SeoJob:
         """Apply one scoped state CAS and append its audit in the same write lock."""
         with transaction(self._conn):
@@ -462,16 +590,27 @@ class JobService:
                 finished_at = record.finished_at
                 if target in _FINISHED_STATES and finished_at is None:
                     finished_at = now
-                error_code = record.error_code
+                stored_error_code = record.error_code
                 error_summary = record.error_summary
                 if target in {JobState.FAILED_RETRYABLE, JobState.FAILED_FINAL}:
+                    if error_code is not None:
+                        if type(error_code) is not str or not error_code.strip():
+                            raise ValueError("error_code must be a non-empty string")
+                        stored_error_code = error_code
                     error_summary = reason
                 elif (
                     actual_state is JobState.FAILED_RETRYABLE
                     and target is JobState.QUEUED
                 ):
-                    error_code = None
+                    stored_error_code = None
                     error_summary = None
+                elif error_code is not None:
+                    raise ValueError("error_code is valid only for failed transitions")
+                if current_stage is not None and (
+                    type(current_stage) is not str or not current_stage.strip()
+                ):
+                    raise ValueError("current_stage must be a non-empty string")
+                stored_stage = current_stage if current_stage is not None else record.current_stage
                 changed = self._jobs.compare_and_swap_state(
                     self._company_id,
                     job_id,
@@ -480,7 +619,8 @@ class JobService:
                     attempt=attempt,
                     started_at=started_at,
                     finished_at=finished_at,
-                    error_code=error_code,
+                    current_stage=stored_stage,
+                    error_code=stored_error_code,
                     error_summary=error_summary,
                 )
                 if not changed:

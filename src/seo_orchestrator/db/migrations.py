@@ -4,7 +4,7 @@ import sqlite3
 
 from seo_orchestrator.errors import MigrationError
 
-_LATEST_VERSION = 5
+_LATEST_VERSION = 6
 
 _MIGRATION_0001 = (
     """
@@ -431,12 +431,283 @@ _MIGRATION_0005 = (
     """,
 )
 
+_MIGRATION_0006 = (
+    """
+    CREATE TABLE job_execution_runs (
+        company_id TEXT NOT NULL,
+        job_id TEXT NOT NULL,
+        attempt INTEGER NOT NULL CHECK (attempt > 0),
+        idempotency_key TEXT NOT NULL,
+        external_run_id TEXT,
+        executor_name TEXT,
+        external_accepted_at TEXT,
+        acceptance_observed_at TEXT,
+        external_status TEXT CHECK (
+            external_status IN (
+                'ACCEPTED', 'RUNNING', 'SUCCEEDED',
+                'FAILED_RETRYABLE', 'FAILED_FINAL', 'CANCELED'
+            )
+        ),
+        current_stage TEXT,
+        next_action_at TEXT,
+        submission_attempted_at TEXT,
+        completion_observed_at TEXT,
+        error_code TEXT,
+        error_summary TEXT,
+        result_json BLOB,
+        result_hash TEXT,
+        heartbeat_at TEXT NOT NULL,
+        lease_token TEXT,
+        lease_expires_at TEXT,
+        reconciliation_count INTEGER NOT NULL DEFAULT 0
+            CHECK (reconciliation_count >= 0),
+        retry_stage_id TEXT NOT NULL DEFAULT 'submission'
+            CHECK (retry_stage_id = trim(retry_stage_id) AND retry_stage_id != ''),
+        transient_failure_count INTEGER NOT NULL DEFAULT 0
+            CHECK (transient_failure_count >= 0),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (company_id, job_id, attempt),
+        FOREIGN KEY (company_id, job_id) REFERENCES jobs(company_id, job_id),
+        CHECK (
+            (
+                external_run_id IS NULL
+                AND external_accepted_at IS NULL AND acceptance_observed_at IS NULL
+            ) OR (
+                external_run_id IS NOT NULL AND executor_name IS NOT NULL
+                AND external_accepted_at IS NOT NULL AND acceptance_observed_at IS NOT NULL
+            )
+        ),
+        CHECK (
+            (lease_token IS NULL AND lease_expires_at IS NULL)
+            OR (lease_token IS NOT NULL AND lease_expires_at IS NOT NULL)
+        ),
+        CHECK (
+            (result_json IS NULL AND result_hash IS NULL)
+            OR (result_json IS NOT NULL AND result_hash IS NOT NULL)
+        ),
+        CHECK (
+            idempotency_key = company_id || ':' || job_id || ':' || CAST(attempt AS TEXT)
+        ),
+        CHECK (
+            (submission_attempted_at IS NULL AND executor_name IS NULL)
+            OR (submission_attempted_at IS NOT NULL AND executor_name IS NOT NULL)
+        ),
+        CHECK (executor_name IS NULL OR (executor_name = trim(executor_name) AND executor_name != '')),
+        CHECK (external_accepted_at IS NULL OR is_utc_timestamp(external_accepted_at) = 1),
+        CHECK (acceptance_observed_at IS NULL OR is_utc_timestamp(acceptance_observed_at) = 1),
+        CHECK (
+            external_accepted_at IS NULL OR (
+                submission_attempted_at IS NOT NULL
+                AND submission_attempted_at <= external_accepted_at
+                AND external_accepted_at <= acceptance_observed_at
+            )
+        ),
+        CHECK (next_action_at IS NULL OR is_utc_timestamp(next_action_at) = 1),
+        CHECK (submission_attempted_at IS NULL OR is_utc_timestamp(submission_attempted_at) = 1),
+        CHECK (completion_observed_at IS NULL OR is_utc_timestamp(completion_observed_at) = 1),
+        CHECK (is_utc_timestamp(heartbeat_at) = 1),
+        CHECK (lease_expires_at IS NULL OR is_utc_timestamp(lease_expires_at) = 1),
+        CHECK (is_utc_timestamp(created_at) = 1),
+        CHECK (is_utc_timestamp(updated_at) = 1)
+    )
+    """,
+    """
+    CREATE INDEX idx_jobs_runner_state_created
+    ON jobs(state, created_at, job_id)
+    """,
+    """
+    CREATE INDEX idx_job_execution_runs_due
+    ON job_execution_runs(next_action_at, company_id, job_id, attempt)
+    """,
+    """
+    CREATE INDEX idx_job_execution_runs_idempotency
+    ON job_execution_runs(company_id, idempotency_key)
+    """,
+    """
+    CREATE TABLE job_stage_retry_budgets (
+        company_id TEXT NOT NULL,
+        job_id TEXT NOT NULL,
+        retry_stage_id TEXT NOT NULL
+            CHECK (retry_stage_id = trim(retry_stage_id) AND retry_stage_id != ''),
+        failure_count INTEGER NOT NULL DEFAULT 0 CHECK (failure_count >= 0),
+        created_at TEXT NOT NULL CHECK (is_utc_timestamp(created_at) = 1),
+        updated_at TEXT NOT NULL CHECK (is_utc_timestamp(updated_at) = 1),
+        PRIMARY KEY (company_id, job_id, retry_stage_id),
+        FOREIGN KEY (company_id, job_id) REFERENCES jobs(company_id, job_id)
+    )
+    """,
+    """
+    CREATE TRIGGER job_stage_retry_budget_identity_immutable
+    BEFORE UPDATE OF company_id, job_id, retry_stage_id, created_at
+    ON job_stage_retry_budgets
+    FOR EACH ROW
+    WHEN NEW.company_id IS NOT OLD.company_id
+      OR NEW.job_id IS NOT OLD.job_id
+      OR NEW.retry_stage_id IS NOT OLD.retry_stage_id
+      OR NEW.created_at IS NOT OLD.created_at
+    BEGIN
+        SELECT RAISE(ABORT, 'stage retry budget identity is immutable');
+    END
+    """,
+    """
+    CREATE TRIGGER job_stage_retry_budget_monotonic
+    BEFORE UPDATE OF failure_count ON job_stage_retry_budgets
+    FOR EACH ROW
+    WHEN NEW.failure_count < OLD.failure_count
+    BEGIN
+        SELECT RAISE(ABORT, 'stage retry budget cannot decrease');
+    END
+    """,
+    """
+    CREATE UNIQUE INDEX idx_job_execution_runs_external_identity
+    ON job_execution_runs(executor_name, external_run_id)
+    WHERE external_run_id IS NOT NULL;
+    """,
+    """
+    CREATE TRIGGER jobs_runner_timestamp_valid_insert
+    BEFORE INSERT ON jobs
+    FOR EACH ROW
+    WHEN NEW.started_at IS NOT NULL AND is_utc_timestamp(NEW.started_at) != 1
+    BEGIN
+        SELECT RAISE(ABORT, 'job scheduler timestamp must be canonical UTC');
+    END
+    """,
+    """
+    CREATE TRIGGER jobs_runner_timestamp_valid_update
+    BEFORE UPDATE OF started_at ON jobs
+    FOR EACH ROW
+    WHEN NEW.started_at IS NOT NULL AND is_utc_timestamp(NEW.started_at) != 1
+    BEGIN
+        SELECT RAISE(ABORT, 'job scheduler timestamp must be canonical UTC');
+    END
+    """,
+    """
+    CREATE TRIGGER job_execution_runs_identity_immutable
+    BEFORE UPDATE OF company_id, job_id, attempt, idempotency_key, created_at
+    ON job_execution_runs
+    FOR EACH ROW
+    WHEN NEW.company_id IS NOT OLD.company_id
+      OR NEW.job_id IS NOT OLD.job_id
+      OR NEW.attempt IS NOT OLD.attempt
+      OR NEW.idempotency_key IS NOT OLD.idempotency_key
+      OR NEW.created_at IS NOT OLD.created_at
+    BEGIN
+        SELECT RAISE(ABORT, 'execution run identity is immutable');
+    END
+    """,
+    """
+    CREATE TRIGGER job_execution_runs_result_immutable
+    BEFORE UPDATE OF result_json, result_hash ON job_execution_runs
+    FOR EACH ROW
+    WHEN OLD.result_json IS NOT NULL
+      AND (NEW.result_json IS NOT OLD.result_json OR NEW.result_hash IS NOT OLD.result_hash)
+    BEGIN
+        SELECT RAISE(ABORT, 'execution result is immutable');
+    END
+    """,
+    """
+    CREATE TRIGGER job_execution_runs_external_status_monotonic
+    BEFORE UPDATE OF external_status ON job_execution_runs
+    FOR EACH ROW
+    WHEN (
+        OLD.external_status IS NOT NULL
+        AND NEW.external_status IS NULL
+    ) OR (
+        OLD.external_status IN (
+            'SUCCEEDED', 'FAILED_RETRYABLE', 'FAILED_FINAL', 'CANCELED'
+        )
+        AND NEW.external_status IS NOT OLD.external_status
+    ) OR (
+        OLD.external_status = 'RUNNING'
+        AND NEW.external_status = 'ACCEPTED'
+    )
+    BEGIN
+        SELECT RAISE(ABORT, 'external status cannot regress');
+    END
+    """,
+    """
+    CREATE TRIGGER job_execution_runs_external_identity_immutable
+    BEFORE UPDATE OF external_run_id, executor_name, external_accepted_at,
+                     acceptance_observed_at ON job_execution_runs
+    FOR EACH ROW
+    WHEN (
+        OLD.executor_name IS NOT NULL
+        AND NEW.executor_name IS NOT OLD.executor_name
+    ) OR (
+        OLD.external_run_id IS NOT NULL
+        AND (
+          NEW.external_run_id IS NOT OLD.external_run_id
+          OR NEW.external_accepted_at IS NOT OLD.external_accepted_at
+          OR NEW.acceptance_observed_at IS NOT OLD.acceptance_observed_at
+        )
+    )
+    BEGIN
+        SELECT RAISE(ABORT, 'external run identity is immutable');
+    END
+    """,
+    """
+    CREATE TRIGGER job_execution_runs_external_identity_owned_insert
+    BEFORE INSERT ON job_execution_runs
+    FOR EACH ROW
+    WHEN NEW.external_run_id IS NOT NULL
+      AND EXISTS (
+          SELECT 1 FROM job_execution_runs AS existing
+          WHERE existing.executor_name = NEW.executor_name
+            AND existing.external_run_id = NEW.external_run_id
+            AND (
+                existing.company_id != NEW.company_id
+                OR existing.job_id != NEW.job_id
+                OR existing.attempt != NEW.attempt
+            )
+      )
+    BEGIN
+        SELECT RAISE(ABORT, 'external run belongs to another job');
+    END
+    """,
+    """
+    CREATE TRIGGER job_execution_runs_external_identity_owned_update
+    BEFORE UPDATE OF external_run_id ON job_execution_runs
+    FOR EACH ROW
+    WHEN NEW.external_run_id IS NOT NULL
+      AND EXISTS (
+          SELECT 1 FROM job_execution_runs AS existing
+          WHERE existing.executor_name = NEW.executor_name
+            AND existing.external_run_id = NEW.external_run_id
+            AND (
+                existing.company_id != NEW.company_id
+                OR existing.job_id != NEW.job_id
+                OR existing.attempt != NEW.attempt
+            )
+      )
+    BEGIN
+        SELECT RAISE(ABORT, 'external run belongs to another job');
+    END
+    """,
+    """
+    CREATE TRIGGER job_execution_runs_append_only
+    BEFORE DELETE ON job_execution_runs
+    FOR EACH ROW
+    BEGIN
+        SELECT RAISE(ABORT, 'execution runs are append-only');
+    END
+    """,
+    """
+    CREATE TABLE runner_heartbeats (
+        runner_id TEXT PRIMARY KEY,
+        started_at TEXT NOT NULL,
+        heartbeat_at TEXT NOT NULL
+    )
+    """,
+)
+
 _MIGRATIONS = (
     (1, _MIGRATION_0001),
     (2, _MIGRATION_0002),
     (3, _MIGRATION_0003),
     (4, _MIGRATION_0004),
     (5, _MIGRATION_0005),
+    (6, _MIGRATION_0006),
 )
 
 
