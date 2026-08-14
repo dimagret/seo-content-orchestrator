@@ -4,13 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Query, Request, status
 
 from seo_orchestrator.db.connection import connect, transaction
 from seo_orchestrator.domain import CompanyProfile
+from seo_orchestrator.domain.models import Identifier
 from seo_orchestrator.services.company_cards import (
     CompanyCardService,
     CreateCompany,
+    ReviseCompany,
 )
 from seo_orchestrator.settings import Settings
 
@@ -36,6 +38,25 @@ def create_company_router(
         try:
             with transaction(connection):
                 return CompanyCardService(connection).create_company(command)
+        finally:
+            connection.close()
+
+    @router.get("/v1/companies/{company_id}")
+    def get_company(company_id: Identifier, version: int = Query(ge=1)) -> CompanyProfile:
+        connection = connect(settings.db_path)
+        try:
+            return CompanyCardService(connection).get_company_profile(company_id, version)
+        finally:
+            connection.close()
+
+    @router.patch("/v1/companies/{company_id}")
+    def revise_company(company_id: Identifier, command: ReviseCompany) -> CompanyProfile:
+        if command.company_id != company_id:
+            raise ValueError("company_id path and body must match")
+        connection = connect(settings.db_path)
+        try:
+            with transaction(connection):
+                return CompanyCardService(connection).revise_company(command)
         finally:
             connection.close()
 

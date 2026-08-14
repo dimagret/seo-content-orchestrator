@@ -169,12 +169,17 @@ async def _start_brief(app: Any, company_id: str, actor_id: str) -> httpx.Respon
 
 
 async def _update_brief(app: Any, brief_id: str, payload: dict[str, Any]) -> httpx.Response:
+    request_payload = {
+        "expected_version": 1,
+        "expected_profile_version": 1,
+        **payload,
+    }
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://worker.test") as client:
         return await client.patch(
             f"/v1/briefs/{brief_id}",
             headers={"authorization": f"Bearer {_TOKEN_HEX}"},
-            json=payload,
+            json=request_payload,
         )
 
 
@@ -184,7 +189,12 @@ async def _validate_brief(app: Any, brief_id: str) -> httpx.Response:
         return await client.post(
             f"/v1/briefs/{brief_id}/validate",
             headers={"authorization": f"Bearer {_TOKEN_HEX}"},
-            json={"company_id": "avtomalyar", "actor_id": "fixture-actor"},
+            json={
+                "company_id": "avtomalyar",
+                "actor_id": "fixture-actor",
+                "expected_version": 2,
+                "expected_profile_version": 1,
+            },
         )
 
 
@@ -1102,3 +1112,108 @@ def test_n8n_callback_rejects_oversized_body_before_parsing(tmp_path: Path) -> N
 
     assert response.status_code == 401
     assert response.json()["code"] == "UNAUTHORIZED"
+
+
+async def _get_company_version(
+    app: Any, company_id: str, version: int
+) -> httpx.Response:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://worker.test") as client:
+        return await client.get(
+            f"/v1/companies/{company_id}",
+            headers={"authorization": f"Bearer {_TOKEN_HEX}"},
+            params={"version": version},
+        )
+
+
+async def _revise_company(
+    app: Any, company_id: str, payload: dict[str, Any]
+) -> httpx.Response:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://worker.test") as client:
+        return await client.patch(
+            f"/v1/companies/{company_id}",
+            headers={"authorization": f"Bearer {_TOKEN_HEX}"},
+            json=payload,
+        )
+
+
+def test_company_get_returns_one_exact_historical_version(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    _seed_company_card(settings.db_path)
+
+    response = asyncio.run(_get_company_version(create_app(settings), "avtomalyar", 1))
+
+    assert response.status_code == 200
+    assert response.json()["company_id"] == "avtomalyar"
+    assert response.json()["company_profile_version"] == 1
+
+
+def test_company_revision_is_version_checked_and_preserves_history(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    _seed_company_card(settings.db_path)
+    fixture = json.loads((FIXTURE_ROOT / "avtomalyar.json").read_text(encoding="utf-8"))
+    replacement = dict(fixture["profile"])
+    replacement["name"] = "Revised Avtomalyar Studio"
+    app = create_app(settings)
+
+    revised = asyncio.run(
+        _revise_company(
+            app,
+            "avtomalyar",
+            {
+                "company_id": "avtomalyar",
+                "actor_id": "fixture-editor",
+                "expected_current_version": 1,
+                "replacement": replacement,
+            },
+        )
+    )
+    stale = asyncio.run(
+        _revise_company(
+            app,
+            "avtomalyar",
+            {
+                "company_id": "avtomalyar",
+                "actor_id": "fixture-editor",
+                "expected_current_version": 1,
+                "replacement": replacement,
+            },
+        )
+    )
+    historical = asyncio.run(_get_company_version(app, "avtomalyar", 1))
+
+    assert revised.status_code == 200
+    assert revised.json()["company_profile_version"] == 2
+    assert revised.json()["name"] == "Revised Avtomalyar Studio"
+    assert stale.status_code == 409
+    assert stale.json()["code"] == "VERSION_CONFLICT"
+    assert historical.status_code == 200
+    assert historical.json()["company_profile_version"] == 1
+    assert historical.json()["name"] != "Revised Avtomalyar Studio"
+
+
+def test_brief_update_rejects_mismatched_expected_profile_version(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    _seed_company_card(settings.db_path)
+    app = create_app(settings)
+    started = asyncio.run(_start_brief(app, "avtomalyar", "fixture-actor"))
+    brief_id = started.json()["brief_id"]
+
+    response = asyncio.run(
+        _update_brief(
+            app,
+            brief_id,
+            {
+                "company_id": "avtomalyar",
+                "brief_id": brief_id,
+                "actor_id": "fixture-actor",
+                "expected_version": 1,
+                "expected_profile_version": 999,
+                "goal": "This stale command must not be applied",
+            },
+        )
+    )
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "VERSION_CONFLICT"

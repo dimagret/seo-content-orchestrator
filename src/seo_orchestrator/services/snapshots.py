@@ -40,6 +40,7 @@ class SnapshotCompiler:
             raise ValueError("prompt_set_version must be a positive integer")
         record = self._briefs.get_validated_draft(self._company_id, brief_id)
         values = json.loads(record.brief_json)
+        values.pop("version", None)
         values.pop("category_context")
         values.pop("status")
         values["created_at"] = datetime.fromisoformat(values["created_at"])

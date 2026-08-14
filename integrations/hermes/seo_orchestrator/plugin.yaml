@@ -1,0 +1,21 @@
+name: seo-orchestrator
+version: 0.1.0
+description: "Control durable multi-company SEO jobs through an isolated local worker."
+author: Verexela
+kind: standalone
+platforms:
+  - linux
+provides_tools:
+  - seo_company_list
+  - seo_company_get
+  - seo_company_save_draft
+  - seo_brief_start
+  - seo_brief_update
+  - seo_brief_validate
+  - seo_job_plan
+  - seo_job_approve
+  - seo_job_status
+  - seo_job_cancel
+  - seo_job_retry
+  - seo_job_artifact
+  - seo_export_approve

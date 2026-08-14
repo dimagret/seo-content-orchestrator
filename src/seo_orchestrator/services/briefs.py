@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from seo_orchestrator.canonical import canonical_json
 from seo_orchestrator.db.repositories import BriefDraftRecord, BriefRepository, CompanyRepository
 from seo_orchestrator.domain.models import DomainModel, Identifier, SeoBrief, StrictPositiveInt
-from seo_orchestrator.errors import NotFound
+from seo_orchestrator.errors import NotFound, VersionConflict
 
 
 class SeoBriefDraft(BaseModel):
@@ -22,6 +22,7 @@ class SeoBriefDraft(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
 
     brief_id: Identifier
+    version: StrictPositiveInt = 1
     company_id: Identifier
     company_profile_version: StrictPositiveInt
     direction_id: Identifier | None = None
@@ -60,6 +61,8 @@ class UpdateBrief(DomainModel):
     brief_id: Identifier
     actor_id: Identifier
     company_id: Identifier
+    expected_version: StrictPositiveInt | None = None
+    expected_profile_version: StrictPositiveInt | None = None
     replacement_company_id: Identifier | None = None
     direction_id: Identifier | None = None
     direction_version: StrictPositiveInt | None = None
@@ -132,13 +135,30 @@ class BriefService:
 
     def get_brief(self, company_id: str, brief_id: str, actor_id: str) -> SeoBriefDraft:
         record = self._briefs.get_draft(company_id, brief_id, actor_id)
+        return self._draft_from_record(record)
+
+    @staticmethod
+    def _draft_from_record(record: BriefDraftRecord) -> SeoBriefDraft:
         values = json.loads(record.brief_json)
         values["created_at"] = datetime.fromisoformat(values["created_at"])
         values["updated_at"] = datetime.fromisoformat(values["updated_at"])
         return SeoBriefDraft.model_validate(values)
 
     def update_brief(self, command: UpdateBrief) -> SeoBriefDraft:
-        current = self.get_brief(command.company_id, command.brief_id, command.actor_id)
+        current_record = self._briefs.get_draft(
+            command.company_id, command.brief_id, command.actor_id
+        )
+        current = self._draft_from_record(current_record)
+        if (
+            command.expected_version is not None
+            and command.expected_version != current.version
+        ):
+            raise VersionConflict
+        if (
+            command.expected_profile_version is not None
+            and command.expected_profile_version != current.company_profile_version
+        ):
+            raise VersionConflict
         fields = command.model_fields_set
         for identifier, version in (
             ("direction_id", "direction_version"),
@@ -244,14 +264,33 @@ class BriefService:
                 values[field_name] = getattr(command, field_name)
         values["updated_at"] = self._clock()
         values["status"] = "draft"
+        values["version"] = current.version + 1
         updated = SeoBriefDraft.model_validate(values)
-        self._briefs.update_draft(command.company_id, self._record(updated))
+        self._briefs.update_draft(
+            command.company_id,
+            self._record(updated),
+            expected_brief_json=current_record.brief_json,
+        )
         return updated
 
     def validate_brief(
-        self, company_id: str, brief_id: str, actor_id: str
+        self,
+        company_id: str,
+        brief_id: str,
+        actor_id: str,
+        *,
+        expected_version: int | None = None,
+        expected_profile_version: int | None = None,
     ) -> ValidatedBrief:
-        draft = self.get_brief(company_id, brief_id, actor_id)
+        current_record = self._briefs.get_draft(company_id, brief_id, actor_id)
+        draft = self._draft_from_record(current_record)
+        if expected_version is not None and draft.version != expected_version:
+            raise VersionConflict
+        if (
+            expected_profile_version is not None
+            and draft.company_profile_version != expected_profile_version
+        ):
+            raise VersionConflict
         if (
             draft.direction_id is None
             or draft.direction_version is None
@@ -277,15 +316,21 @@ class BriefService:
         ):
             raise NotFound
         values = draft.model_dump(mode="python")
+        values.pop("version")
         values.pop("category_context")
         values.pop("status")
         validated = ValidatedBrief.model_validate(values)
         saved = SeoBriefDraft.model_validate(
             {
                 **validated.model_dump(mode="python"),
+                "version": draft.version + 1,
                 "category_context": draft.category_context,
                 "status": "validated",
             }
         )
-        self._briefs.update_draft(draft.company_id, self._record(saved))
+        self._briefs.update_draft(
+            draft.company_id,
+            self._record(saved),
+            expected_brief_json=current_record.brief_json,
+        )
         return validated
