@@ -122,6 +122,16 @@ class CreateAudience(DomainModel):
     replacement: AudienceData
 
 
+class ReviseAudience(DomainModel):
+    company_id: Identifier
+    direction_id: Identifier
+    direction_version: StrictPositiveInt
+    audience_segment_id: Identifier
+    actor_id: Identifier
+    expected_current_version: StrictPositiveInt
+    replacement: AudienceData
+
+
 class CompanyCardService:
     """Create immutable company-card versions without committing caller transactions."""
 
@@ -230,6 +240,32 @@ class CompanyCardService:
             audience_version=1,
             **command.replacement.model_dump(),
             created_at=now,
+            updated_at=now,
+        )
+        self._repository.add_audience(audience)
+        return audience
+
+    def revise_audience(self, command: ReviseAudience) -> AudienceSegment:
+        self._repository.require_active(command.company_id)
+        self._repository.get_direction(
+            command.company_id, command.direction_id, command.direction_version
+        )
+        current = self._repository.get_current_audience(
+            command.company_id,
+            command.direction_id,
+            command.audience_segment_id,
+        )
+        if current.audience_version != command.expected_current_version:
+            raise VersionConflict
+        now = self._clock()
+        audience = AudienceSegment(
+            company_id=command.company_id,
+            direction_id=command.direction_id,
+            direction_version=command.direction_version,
+            audience_segment_id=command.audience_segment_id,
+            audience_version=current.audience_version + 1,
+            **command.replacement.model_dump(),
+            created_at=current.created_at,
             updated_at=now,
         )
         self._repository.add_audience(audience)

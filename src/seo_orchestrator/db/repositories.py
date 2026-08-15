@@ -334,6 +334,27 @@ class CompanyRepository:
         values["updated_at"] = datetime.fromisoformat(values["updated_at"])
         return AudienceSegment.model_validate(values)
 
+    def get_current_audience(
+        self,
+        company_id: str,
+        direction_id: str,
+        audience_segment_id: str,
+    ) -> AudienceSegment:
+        row = self._conn.execute(
+            """SELECT audience_json
+               FROM audience_segment_versions
+               WHERE company_id = ? AND direction_id = ? AND audience_segment_id = ?
+               ORDER BY version DESC
+               LIMIT 1""",
+            (company_id, direction_id, audience_segment_id),
+        ).fetchone()
+        if row is None:
+            raise NotFound
+        values: dict[str, Any] = json.loads(row[0])
+        values["created_at"] = datetime.fromisoformat(values["created_at"])
+        values["updated_at"] = datetime.fromisoformat(values["updated_at"])
+        return AudienceSegment.model_validate(values)
+
 
 class BriefRepository:
     """Persist complete brief records through company-explicit APIs."""

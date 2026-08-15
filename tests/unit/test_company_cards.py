@@ -14,6 +14,7 @@ from seo_orchestrator.services.company_cards import (
     CreateCompany,
     CreateDirection,
     DirectionData,
+    ReviseAudience,
     ReviseCompany,
     ReviseDirection,
 )
@@ -291,6 +292,95 @@ def test_create_audience_binds_exact_direction_version(tmp_path: Path) -> None:
         assert service.get_audience(
             "avtomalyar", "car-painting", "private-car-owners", 1
         ) == audience
+    finally:
+        conn.close()
+
+
+def test_revise_audience_appends_version_bound_to_revised_direction(
+    tmp_path: Path,
+) -> None:
+    conn = connect(tmp_path / "cards.db")
+    try:
+        migrate(conn)
+        times = iter((NOW, NOW, NOW, LATER, LATER))
+        service = CompanyCardService(conn, clock=lambda: next(times))
+        with transaction(conn):
+            service.create_company(
+                CreateCompany(
+                    company_id="avtomalyar",
+                    company_profile_id="avtomalyar-profile",
+                    actor_id="invented-actor",
+                    replacement=_profile_data(),
+                )
+            )
+            service.create_direction(
+                CreateDirection(
+                    company_id="avtomalyar",
+                    company_profile_version=1,
+                    direction_id="car-painting",
+                    actor_id="invented-actor",
+                    replacement=_direction_data(),
+                )
+            )
+            original = service.create_audience(
+                CreateAudience(
+                    company_id="avtomalyar",
+                    direction_id="car-painting",
+                    direction_version=1,
+                    audience_segment_id="private-car-owners",
+                    actor_id="invented-actor",
+                    replacement=_audience_data(),
+                )
+            )
+            service.revise_direction(
+                ReviseDirection(
+                    company_id="avtomalyar",
+                    company_profile_version=1,
+                    direction_id="car-painting",
+                    actor_id="invented-editor",
+                    expected_current_version=1,
+                    replacement=_direction_data(name="Vehicle Paint Refinishing"),
+                )
+            )
+            revised = service.revise_audience(
+                ReviseAudience(
+                    company_id="avtomalyar",
+                    direction_id="car-painting",
+                    direction_version=2,
+                    audience_segment_id="private-car-owners",
+                    actor_id="invented-editor",
+                    expected_current_version=1,
+                    replacement=_audience_data(),
+                )
+            )
+            with pytest.raises(VersionConflict):
+                service.revise_audience(
+                    ReviseAudience(
+                        company_id="avtomalyar",
+                        direction_id="car-painting",
+                        direction_version=2,
+                        audience_segment_id="private-car-owners",
+                        actor_id="invented-stale-editor",
+                        expected_current_version=1,
+                        replacement=_audience_data(),
+                    )
+                )
+
+        assert revised.audience_version == 2
+        assert revised.direction_version == 2
+        assert revised.created_at == original.created_at
+        assert revised.updated_at == LATER
+        assert service.get_audience(
+            "avtomalyar", "car-painting", "private-car-owners", 1
+        ) == original
+        assert service.get_audience(
+            "avtomalyar", "car-painting", "private-car-owners", 2
+        ) == revised
+        assert conn.execute(
+            """SELECT COUNT(*) FROM audience_segment_versions
+               WHERE company_id = ? AND direction_id = ? AND audience_segment_id = ?""",
+            ("avtomalyar", "car-painting", "private-car-owners"),
+        ).fetchone() == (2,)
     finally:
         conn.close()
 
