@@ -1,0 +1,1320 @@
+{
+  "main_order": [
+    "Тип контекста",
+    "Первая итерация парсинга1",
+    "Получаем main контент вашей страницы",
+    "Контекст вашей страницы",
+    "Сборка текстов конкурентов",
+    "БРИФ ДЛЯ ОБОГАЩЕНИЯ КОНТЕНТА СТРАНИЦЫ",
+    "Поиск исследований",
+    "Ждем ветки",
+    "Выделяет n-граммы из ключей",
+    "Правит n-граммы",
+    "Писатель",
+    "Редактура и проверка вписывания ссылок",
+    "Подсчет параметров текста",
+    "Контроль ключевых слов",
+    "Генерация мета-тегов",
+    "Оценщик"
+  ],
+  "profile_dependent_nodes": [
+    "Оценщик",
+    "Генерация мета-тегов",
+    "БРИФ ДЛЯ ОБОГАЩЕНИЯ КОНТЕНТА СТРАНИЦЫ",
+    "Редактура и проверка вписывания ссылок",
+    "Писатель",
+    "Поиск исследований"
+  ],
+  "provenance_algorithm": "sha256(canonical-json(sort_keys,separators=comma-colon) of nodes[id,name,type,position]+edges[source,kind,output_index,target,target_type,target_input_index])",
+  "removed_disconnected_nodes": [
+    "Embeddings OpenAI",
+    "Supabase Vector Store",
+    "Reranker Cohere",
+    "Scrape a url and get its content1",
+    "/scrape in Firecrawl"
+  ],
+  "required_nodes": {
+    "SEO ТЗ из таблицы": "n8n-nodes-base.googleSheets",
+    "When clicking ‘Execute workflow’": "n8n-nodes-base.manualTrigger",
+    "Для кого пишем": "n8n-nodes-base.set",
+    "Оценщик": "@n8n/n8n-nodes-langchain.agent",
+    "Финальный вывод": "n8n-nodes-base.googleSheets",
+    "Цикл": "n8n-nodes-base.splitInBatches"
+  },
+  "required_provider_bindings": {
+    "@n8n/n8n-nodes-langchain.lmChatOpenRouter": "openrouter",
+    "FireCrawl": "firecrawl"
+  },
+  "source_connection_groups": {
+    "Embeddings OpenAI": {
+      "ai_embedding": 1
+    },
+    "FireCrawl": {
+      "main": 1
+    },
+    "OpenRouter Chat Model": {
+      "ai_languageModel": 1
+    },
+    "OpenRouter Chat Model2": {
+      "ai_languageModel": 1
+    },
+    "OpenRouter Chat Model3": {
+      "ai_languageModel": 1
+    },
+    "OpenRouter Chat Model4": {
+      "ai_languageModel": 1
+    },
+    "OpenRouter Chat Model5": {
+      "ai_languageModel": 1
+    },
+    "OpenRouter Chat Model6": {
+      "ai_languageModel": 1
+    },
+    "OpenRouter Chat Model7": {
+      "ai_languageModel": 1
+    },
+    "OpenRouter Chat Model8": {
+      "ai_languageModel": 1
+    },
+    "Reranker Cohere": {
+      "ai_reranker": 1
+    },
+    "SEO ТЗ из таблицы": {
+      "main": 1
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": 1
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": 1
+    },
+    "perplexity": {
+      "ai_languageModel": 1
+    },
+    "БРИФ ДЛЯ ОБОГАЩЕНИЯ КОНТЕНТА СТРАНИЦЫ": {
+      "main": 1
+    },
+    "Блок для линковки1": {
+      "main": 1
+    },
+    "Блок кейсов": {
+      "main": 1
+    },
+    "Выделяет n-граммы из ключей": {
+      "main": 1
+    },
+    "Генерация мета-тегов": {
+      "main": 1
+    },
+    "Для кого пишем": {
+      "main": 1
+    },
+    "Ждем ветки": {
+      "main": 1
+    },
+    "Ждем парсинг": {
+      "main": 1
+    },
+    "Контекст вашей страницы": {
+      "main": 1
+    },
+    "Контроль ключевых слов": {
+      "main": 1
+    },
+    "Оценщик": {
+      "main": 1
+    },
+    "Первая итерация парсинга": {
+      "main": 2
+    },
+    "Первая итерация парсинга1": {
+      "main": 1
+    },
+    "Писатель": {
+      "main": 1
+    },
+    "Подсчет параметров текста": {
+      "main": 1
+    },
+    "Поиск исследований": {
+      "main": 1
+    },
+    "Получаем main контент вашей страницы": {
+      "main": 1
+    },
+    "Получаем чистенькие тексты": {
+      "main": 1
+    },
+    "Правит n-граммы": {
+      "main": 1
+    },
+    "Разбивает URL": {
+      "main": 1
+    },
+    "Редактура и проверка вписывания ссылок": {
+      "main": 1
+    },
+    "Сбор кейсов": {
+      "main": 1
+    },
+    "Сбор кейсов в 1 файл": {
+      "main": 1
+    },
+    "Сборка URL для линков1": {
+      "main": 1
+    },
+    "Сборка текстов конкурентов": {
+      "main": 1
+    },
+    "Ссылки для линковки1": {
+      "main": 1
+    },
+    "Тип контекста": {
+      "main": 2
+    },
+    "Финальный вывод": {
+      "main": 1
+    },
+    "Цикл": {
+      "main": 2
+    }
+  },
+  "source_connections_sha256": "c92ef208363bb8977ad9e8b4a77c6e858e9544e6c7350f28e179174c6c714f7e",
+  "source_edges": [
+    {
+      "kind": "ai_embedding",
+      "output_index": 0,
+      "source": "Embeddings OpenAI",
+      "target": "Supabase Vector Store",
+      "target_input_index": 0,
+      "target_type": "ai_embedding"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "FireCrawl",
+      "target": "Ждем парсинг",
+      "target_input_index": 1,
+      "target_type": "main"
+    },
+    {
+      "kind": "ai_languageModel",
+      "output_index": 0,
+      "source": "OpenRouter Chat Model",
+      "target": "Редактура и проверка вписывания ссылок",
+      "target_input_index": 0,
+      "target_type": "ai_languageModel"
+    },
+    {
+      "kind": "ai_languageModel",
+      "output_index": 0,
+      "source": "OpenRouter Chat Model2",
+      "target": "Генерация мета-тегов",
+      "target_input_index": 0,
+      "target_type": "ai_languageModel"
+    },
+    {
+      "kind": "ai_languageModel",
+      "output_index": 0,
+      "source": "OpenRouter Chat Model3",
+      "target": "Писатель",
+      "target_input_index": 0,
+      "target_type": "ai_languageModel"
+    },
+    {
+      "kind": "ai_languageModel",
+      "output_index": 0,
+      "source": "OpenRouter Chat Model4",
+      "target": "БРИФ ДЛЯ ОБОГАЩЕНИЯ КОНТЕНТА СТРАНИЦЫ",
+      "target_input_index": 0,
+      "target_type": "ai_languageModel"
+    },
+    {
+      "kind": "ai_languageModel",
+      "output_index": 0,
+      "source": "OpenRouter Chat Model5",
+      "target": "Structured Output Parser",
+      "target_input_index": 0,
+      "target_type": "ai_languageModel"
+    },
+    {
+      "kind": "ai_languageModel",
+      "output_index": 0,
+      "source": "OpenRouter Chat Model6",
+      "target": "Оценщик",
+      "target_input_index": 0,
+      "target_type": "ai_languageModel"
+    },
+    {
+      "kind": "ai_languageModel",
+      "output_index": 0,
+      "source": "OpenRouter Chat Model7",
+      "target": "Контроль ключевых слов",
+      "target_input_index": 0,
+      "target_type": "ai_languageModel"
+    },
+    {
+      "kind": "ai_languageModel",
+      "output_index": 0,
+      "source": "OpenRouter Chat Model8",
+      "target": "Правит n-граммы",
+      "target_input_index": 0,
+      "target_type": "ai_languageModel"
+    },
+    {
+      "kind": "ai_reranker",
+      "output_index": 0,
+      "source": "Reranker Cohere",
+      "target": "Supabase Vector Store",
+      "target_input_index": 0,
+      "target_type": "ai_reranker"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "SEO ТЗ из таблицы",
+      "target": "Цикл",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "ai_outputParser",
+      "output_index": 0,
+      "source": "Structured Output Parser",
+      "target": "Оценщик",
+      "target_input_index": 0,
+      "target_type": "ai_outputParser"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "When clicking ‘Execute workflow’",
+      "target": "Для кого пишем",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "ai_languageModel",
+      "output_index": 0,
+      "source": "perplexity",
+      "target": "Поиск исследований",
+      "target_input_index": 0,
+      "target_type": "ai_languageModel"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "БРИФ ДЛЯ ОБОГАЩЕНИЯ КОНТЕНТА СТРАНИЦЫ",
+      "target": "Поиск исследований",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "Блок для линковки1",
+      "target": "Ждем ветки",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "Блок кейсов",
+      "target": "Ждем ветки",
+      "target_input_index": 1,
+      "target_type": "main"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "Выделяет n-граммы из ключей",
+      "target": "Правит n-граммы",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "Генерация мета-тегов",
+      "target": "Оценщик",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "Для кого пишем",
+      "target": "SEO ТЗ из таблицы",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "Ждем ветки",
+      "target": "Выделяет n-граммы из ключей",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "Ждем парсинг",
+      "target": "Получаем чистенькие тексты",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "Контекст вашей страницы",
+      "target": "Разбивает URL",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "Контроль ключевых слов",
+      "target": "Генерация мета-тегов",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "Оценщик",
+      "target": "Финальный вывод",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "Первая итерация парсинга",
+      "target": "Ждем парсинг",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "main",
+      "output_index": 1,
+      "source": "Первая итерация парсинга",
+      "target": "FireCrawl",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "Первая итерация парсинга1",
+      "target": "Получаем main контент вашей страницы",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "Писатель",
+      "target": "Редактура и проверка вписывания ссылок",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "Подсчет параметров текста",
+      "target": "Контроль ключевых слов",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "Поиск исследований",
+      "target": "Сбор кейсов",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "Поиск исследований",
+      "target": "Ссылки для линковки1",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "Получаем main контент вашей страницы",
+      "target": "Контекст вашей страницы",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "Получаем чистенькие тексты",
+      "target": "Сборка текстов конкурентов",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "Правит n-граммы",
+      "target": "Писатель",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "Разбивает URL",
+      "target": "Первая итерация парсинга",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "Редактура и проверка вписывания ссылок",
+      "target": "Подсчет параметров текста",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "Сбор кейсов",
+      "target": "Сбор кейсов в 1 файл",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "Сбор кейсов в 1 файл",
+      "target": "Блок кейсов",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "Сборка URL для линков1",
+      "target": "Блок для линковки1",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "Сборка текстов конкурентов",
+      "target": "БРИФ ДЛЯ ОБОГАЩЕНИЯ КОНТЕНТА СТРАНИЦЫ",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "Ссылки для линковки1",
+      "target": "Сборка URL для линков1",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "Тип контекста",
+      "target": "Первая итерация парсинга1",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "main",
+      "output_index": 1,
+      "source": "Тип контекста",
+      "target": "Контекст вашей страницы",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "main",
+      "output_index": 0,
+      "source": "Финальный вывод",
+      "target": "Цикл",
+      "target_input_index": 0,
+      "target_type": "main"
+    },
+    {
+      "kind": "main",
+      "output_index": 1,
+      "source": "Цикл",
+      "target": "Тип контекста",
+      "target_input_index": 0,
+      "target_type": "main"
+    }
+  ],
+  "source_export_sha256": "c86f21658ce612dc40c5b9920fd2c155b8a120d20f57854b16b93f218529b318",
+  "source_graph_sha256": "f0517ab4467e62dabecbf30ee10f499f9447fd038d65c84a753045c53f48455f",
+  "source_node_ids": {
+    "/scrape in Firecrawl": "bf96909f-12c2-4d62-a128-5e7ca95cefdd",
+    "Embeddings OpenAI": "e167cedc-7d84-4cf0-85f4-5e0765f68059",
+    "FireCrawl": "ed532d9e-65ff-4244-a987-aed631c4be68",
+    "OpenRouter Chat Model": "b2312f72-8d91-4093-a6f6-104402cdde4c",
+    "OpenRouter Chat Model2": "96483d2c-ee9b-41b5-9cda-e758b51924fa",
+    "OpenRouter Chat Model3": "de3ff294-6e3e-451a-bdba-b238beac3780",
+    "OpenRouter Chat Model4": "ecc71fd0-554d-4d50-8a06-a10d947ea1dd",
+    "OpenRouter Chat Model5": "d21f9ba5-ecc9-495e-aa19-a38ae800ea42",
+    "OpenRouter Chat Model6": "a0ae7604-aec6-4da4-bbe9-74346b280fd4",
+    "OpenRouter Chat Model7": "92a6f5e2-62d5-4241-a85c-889b3c64f847",
+    "OpenRouter Chat Model8": "dfab6163-545c-4189-8cd5-d00db96de5df",
+    "Reranker Cohere": "b8129660-e8b5-4917-899b-631e481d6b99",
+    "SEO ТЗ из таблицы": "d356b8ea-d293-4bcf-96f0-22ff3ef4b3cd",
+    "Scrape a url and get its content1": "fc4b10cb-1523-436b-bfa6-11f99d85e0cf",
+    "Sticky Note": "d78e61b1-fdee-49be-ac06-1c750b614843",
+    "Sticky Note1": "4de9472f-1266-401c-b28a-4cbe6ef6e369",
+    "Sticky Note10": "6b04d274-b509-4eff-b7cf-4b71838ffe67",
+    "Sticky Note11": "5acc5d24-aba6-43ed-b8fa-b665bfb9f1ca",
+    "Sticky Note12": "27ec13bf-6809-4b24-b86c-01dec5e5f7be",
+    "Sticky Note14": "61d00214-d79f-4311-b29d-016267aab8a4",
+    "Sticky Note18": "7223c231-463e-4fad-8203-27bdbb3181bb",
+    "Sticky Note2": "3a31735d-5ae8-4745-8f86-329cdd7231a8",
+    "Sticky Note3": "4fe2d35c-6007-416e-8856-9262dfeccabd",
+    "Sticky Note4": "084c0f5b-5c72-4329-8de3-2a60bf588b92",
+    "Sticky Note5": "19822699-faa4-4e65-a237-fc288a5be995",
+    "Sticky Note6": "502f049a-419e-4831-b560-ecf119b8cfd2",
+    "Sticky Note7": "7e0a47e0-c0e3-452a-ba26-be8d77298fd8",
+    "Sticky Note8": "cb69b989-48a7-486d-a233-210216c01f4b",
+    "Sticky Note9": "6c6643eb-e092-468f-9b9c-0acdc7a5ddaf",
+    "Structured Output Parser": "848a7729-ef47-4e05-abc7-dc4e1af4efe5",
+    "Supabase Vector Store": "be3166a6-3ef0-42f2-951a-b8c2d3c538a4",
+    "When clicking ‘Execute workflow’": "97ea3e7a-9f20-4952-bef6-940d56c1cf39",
+    "perplexity": "3921c33c-8959-4372-99e0-0b73f53c204f",
+    "БРИФ ДЛЯ ОБОГАЩЕНИЯ КОНТЕНТА СТРАНИЦЫ": "b30496d5-b0a2-40ec-af99-0ab5c0cfd378",
+    "Блок для линковки1": "78ca7285-5404-4b90-ac9e-9d563e012c1c",
+    "Блок кейсов": "a9e4ede6-8c58-411a-9bf8-1f76a9ee8312",
+    "Выделяет n-граммы из ключей": "157197d0-68b3-4395-bae0-469e58c26163",
+    "Генерация мета-тегов": "161cfc96-6ca1-494f-b884-98ceda3093b0",
+    "Для кого пишем": "37fbe332-fd8f-4d43-a8aa-79065198485e",
+    "Ждем ветки": "8fd540ea-6f06-4ee2-8d1f-800e35fde040",
+    "Ждем парсинг": "f33332f8-cf57-4951-9ae5-7b05b9d07298",
+    "Контекст вашей страницы": "9e8cd4bc-f0f7-41a7-b45f-c8af9f98b260",
+    "Контроль ключевых слов": "6fab280f-fcc8-489e-a51c-05d9bcdc46be",
+    "Оценщик": "358b6c64-4364-4ff9-8a13-28c9068f6edf",
+    "Первая итерация парсинга": "92edb9e6-a2b2-4816-9524-01616f66f188",
+    "Первая итерация парсинга1": "9f289be6-12a3-473b-9740-71d87cdd9009",
+    "Писатель": "c933a65c-0ece-4856-82a0-f1a351649f5a",
+    "Подсчет параметров текста": "5a28ae8c-85ba-489f-95fa-d2a6408f363f",
+    "Поиск исследований": "e8454dae-3e64-4f45-8fbd-1dc29c159b63",
+    "Получаем main контент вашей страницы": "64772efb-50c1-4a06-937b-04efd7dbacce",
+    "Получаем чистенькие тексты": "249f0546-338c-492f-beed-13615ba2ba8e",
+    "Правит n-граммы": "35b403e1-9dc5-4e99-8e79-ba01378ed46a",
+    "Разбивает URL": "b064f3b1-b621-455d-9011-44be2172db2a",
+    "Редактура и проверка вписывания ссылок": "c3cb828a-3edd-4a5f-adbc-01c00f6c48cf",
+    "Сбор кейсов": "415b9539-aec2-49ca-b33d-73e1f17397e5",
+    "Сбор кейсов в 1 файл": "ec6e2426-9639-494b-a1f3-de3c4f1b212f",
+    "Сборка URL для линков1": "0ff889fa-0949-4e0f-9888-be06f8856585",
+    "Сборка текстов конкурентов": "076657d3-de00-444b-9126-fefbd176e172",
+    "Ссылки для линковки1": "d8f457fe-6ca3-4d57-8dcb-e8c38c524917",
+    "Тип контекста": "b9572ad4-555a-4ecb-9ca1-f69c5e64194f",
+    "Финальный вывод": "eebf0980-714a-47e1-a423-67f6fe7d665e",
+    "Цикл": "68525a68-faed-47da-bd37-907864df9f0f"
+  },
+  "source_node_positions": {
+    "/scrape in Firecrawl": [
+      16,
+      -32
+    ],
+    "Embeddings OpenAI": [
+      3648,
+      2864
+    ],
+    "FireCrawl": [
+      160,
+      1888
+    ],
+    "OpenRouter Chat Model": [
+      3936,
+      1872
+    ],
+    "OpenRouter Chat Model2": [
+      5136,
+      2416
+    ],
+    "OpenRouter Chat Model3": [
+      3680,
+      1888
+    ],
+    "OpenRouter Chat Model4": [
+      1216,
+      1840
+    ],
+    "OpenRouter Chat Model5": [
+      5616,
+      2432
+    ],
+    "OpenRouter Chat Model6": [
+      5488,
+      2272
+    ],
+    "OpenRouter Chat Model7": [
+      4432,
+      1872
+    ],
+    "OpenRouter Chat Model8": [
+      3424,
+      1888
+    ],
+    "Reranker Cohere": [
+      3776,
+      2864
+    ],
+    "SEO ТЗ из таблицы": [
+      -2160,
+      1920
+    ],
+    "Scrape a url and get its content1": [
+      96,
+      2528
+    ],
+    "Sticky Note": [
+      -608,
+      1440
+    ],
+    "Sticky Note1": [
+      -3520,
+      2080
+    ],
+    "Sticky Note10": [
+      3536,
+      2448
+    ],
+    "Sticky Note11": [
+      -3280,
+      1568
+    ],
+    "Sticky Note12": [
+      5936,
+      2144
+    ],
+    "Sticky Note14": [
+      1952,
+      336
+    ],
+    "Sticky Note18": [
+      2096,
+      1216
+    ],
+    "Sticky Note2": [
+      976,
+      1424
+    ],
+    "Sticky Note3": [
+      4400,
+      1152
+    ],
+    "Sticky Note4": [
+      3120,
+      1344
+    ],
+    "Sticky Note5": [
+      4960,
+      1984
+    ],
+    "Sticky Note6": [
+      0,
+      0
+    ],
+    "Sticky Note7": [
+      -1664,
+      1344
+    ],
+    "Sticky Note8": [
+      1440,
+      2144
+    ],
+    "Sticky Note9": [
+      -2512,
+      1504
+    ],
+    "Structured Output Parser": [
+      5600,
+      2288
+    ],
+    "Supabase Vector Store": [
+      3648,
+      2736
+    ],
+    "When clicking ‘Execute workflow’": [
+      -3104,
+      1824
+    ],
+    "perplexity": [
+      1504,
+      2208
+    ],
+    "БРИФ ДЛЯ ОБОГАЩЕНИЯ КОНТЕНТА СТРАНИЦЫ": [
+      1216,
+      1632
+    ],
+    "Блок для линковки1": [
+      2672,
+      1680
+    ],
+    "Блок кейсов": [
+      2672,
+      1840
+    ],
+    "Выделяет n-граммы из ключей": [
+      3184,
+      1696
+    ],
+    "Генерация мета-тегов": [
+      5120,
+      2224
+    ],
+    "Для кого пишем": [
+      -2752,
+      2128
+    ],
+    "Ждем ветки": [
+      2880,
+      1696
+    ],
+    "Ждем парсинг": [
+      384,
+      1712
+    ],
+    "Контекст вашей страницы": [
+      -944,
+      1952
+    ],
+    "Контроль ключевых слов": [
+      4448,
+      1664
+    ],
+    "Оценщик": [
+      5504,
+      2128
+    ],
+    "Первая итерация парсинга": [
+      -144,
+      1808
+    ],
+    "Первая итерация парсинга1": [
+      -1408,
+      1776
+    ],
+    "Писатель": [
+      3680,
+      1664
+    ],
+    "Подсчет параметров текста": [
+      4256,
+      1664
+    ],
+    "Поиск исследований": [
+      1488,
+      1824
+    ],
+    "Получаем main контент вашей страницы": [
+      -1200,
+      1824
+    ],
+    "Получаем чистенькие тексты": [
+      576,
+      1728
+    ],
+    "Правит n-граммы": [
+      3424,
+      1664
+    ],
+    "Разбивает URL": [
+      -432,
+      1808
+    ],
+    "Редактура и проверка вписывания ссылок": [
+      3952,
+      1664
+    ],
+    "Сбор кейсов": [
+      2256,
+      1840
+    ],
+    "Сбор кейсов в 1 файл": [
+      2464,
+      1840
+    ],
+    "Сборка URL для линков1": [
+      2448,
+      1680
+    ],
+    "Сборка текстов конкурентов": [
+      1072,
+      1728
+    ],
+    "Ссылки для линковки1": [
+      2256,
+      1680
+    ],
+    "Тип контекста": [
+      -1584,
+      1936
+    ],
+    "Финальный вывод": [
+      6016,
+      2192
+    ],
+    "Цикл": [
+      -1776,
+      1872
+    ]
+  },
+  "source_node_types": {
+    "/scrape in Firecrawl": "@mendable/n8n-nodes-firecrawl.firecrawlTool",
+    "Embeddings OpenAI": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+    "FireCrawl": "n8n-nodes-base.httpRequest",
+    "OpenRouter Chat Model": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+    "OpenRouter Chat Model2": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+    "OpenRouter Chat Model3": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+    "OpenRouter Chat Model4": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+    "OpenRouter Chat Model5": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+    "OpenRouter Chat Model6": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+    "OpenRouter Chat Model7": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+    "OpenRouter Chat Model8": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+    "Reranker Cohere": "@n8n/n8n-nodes-langchain.rerankerCohere",
+    "SEO ТЗ из таблицы": "n8n-nodes-base.googleSheets",
+    "Scrape a url and get its content1": "@mendable/n8n-nodes-firecrawl.firecrawl",
+    "Sticky Note": "n8n-nodes-base.stickyNote",
+    "Sticky Note1": "n8n-nodes-base.stickyNote",
+    "Sticky Note10": "n8n-nodes-base.stickyNote",
+    "Sticky Note11": "n8n-nodes-base.stickyNote",
+    "Sticky Note12": "n8n-nodes-base.stickyNote",
+    "Sticky Note14": "n8n-nodes-base.stickyNote",
+    "Sticky Note18": "n8n-nodes-base.stickyNote",
+    "Sticky Note2": "n8n-nodes-base.stickyNote",
+    "Sticky Note3": "n8n-nodes-base.stickyNote",
+    "Sticky Note4": "n8n-nodes-base.stickyNote",
+    "Sticky Note5": "n8n-nodes-base.stickyNote",
+    "Sticky Note6": "n8n-nodes-base.stickyNote",
+    "Sticky Note7": "n8n-nodes-base.stickyNote",
+    "Sticky Note8": "n8n-nodes-base.stickyNote",
+    "Sticky Note9": "n8n-nodes-base.stickyNote",
+    "Structured Output Parser": "@n8n/n8n-nodes-langchain.outputParserStructured",
+    "Supabase Vector Store": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+    "When clicking ‘Execute workflow’": "n8n-nodes-base.manualTrigger",
+    "perplexity": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+    "БРИФ ДЛЯ ОБОГАЩЕНИЯ КОНТЕНТА СТРАНИЦЫ": "@n8n/n8n-nodes-langchain.agent",
+    "Блок для линковки1": "n8n-nodes-base.set",
+    "Блок кейсов": "n8n-nodes-base.set",
+    "Выделяет n-граммы из ключей": "n8n-nodes-base.code",
+    "Генерация мета-тегов": "@n8n/n8n-nodes-langchain.chainLlm",
+    "Для кого пишем": "n8n-nodes-base.set",
+    "Ждем ветки": "n8n-nodes-base.merge",
+    "Ждем парсинг": "n8n-nodes-base.merge",
+    "Контекст вашей страницы": "n8n-nodes-base.set",
+    "Контроль ключевых слов": "@n8n/n8n-nodes-langchain.agent",
+    "Оценщик": "@n8n/n8n-nodes-langchain.agent",
+    "Первая итерация парсинга": "n8n-nodes-base.httpRequest",
+    "Первая итерация парсинга1": "n8n-nodes-base.httpRequest",
+    "Писатель": "@n8n/n8n-nodes-langchain.agent",
+    "Подсчет параметров текста": "n8n-nodes-base.code",
+    "Поиск исследований": "@n8n/n8n-nodes-langchain.chainLlm",
+    "Получаем main контент вашей страницы": "n8n-nodes-base.markdown",
+    "Получаем чистенькие тексты": "n8n-nodes-base.markdown",
+    "Правит n-граммы": "@n8n/n8n-nodes-langchain.agent",
+    "Разбивает URL": "n8n-nodes-base.code",
+    "Редактура и проверка вписывания ссылок": "@n8n/n8n-nodes-langchain.agent",
+    "Сбор кейсов": "n8n-nodes-base.googleSheets",
+    "Сбор кейсов в 1 файл": "n8n-nodes-base.aggregate",
+    "Сборка URL для линков1": "n8n-nodes-base.aggregate",
+    "Сборка текстов конкурентов": "n8n-nodes-base.aggregate",
+    "Ссылки для линковки1": "n8n-nodes-base.googleSheets",
+    "Тип контекста": "n8n-nodes-base.if",
+    "Финальный вывод": "n8n-nodes-base.googleSheets",
+    "Цикл": "n8n-nodes-base.splitInBatches"
+  },
+  "source_parameter_sha256": {
+    "/scrape in Firecrawl": "18e27bc7525a5468a97075073b3a4873ea5b67b3492eb991a5bceb75fe200cdf",
+    "Embeddings OpenAI": "976f0859a9a6fce7f1861b4dac187652b40c090c842a3debca230d389d33edf6",
+    "FireCrawl": "7b10d7e0e4f91001b25a3b278eb94c0161f3f0e0cf2d945eb0cdc06fd0e13a11",
+    "OpenRouter Chat Model": "6bab746d35b226ce4e012f61e5065b8503bdbfedeaec0ba256b9e12d86708c67",
+    "OpenRouter Chat Model2": "30f6f5d0b307fc8bb6d1395a6daecb091d97baaa59d5a3beabcf940fa3884528",
+    "OpenRouter Chat Model3": "713ee720cbfd9018ddf06d310748b1148f2f9eacb0f8fde3ff7e46f12edc7c11",
+    "OpenRouter Chat Model4": "2a3c83cd512833200c5960f2dfcc0b3e212287b0e69565a138df40ee8da94278",
+    "OpenRouter Chat Model5": "c9af0936ad6759d87f7a1e694b11e85429b3546bb425989213a8597e33f381ef",
+    "OpenRouter Chat Model6": "b49898bde247469a041e2a8e62c904c5424d751e1335b4e674d02152154e0db2",
+    "OpenRouter Chat Model7": "2d7c514a0ec0dd09cbf14e046ebc3a83582650c5f3c116a167ab44e89112db7a",
+    "OpenRouter Chat Model8": "1897cc13637ab765711b27fc0e03defc947bbb6a5a1ab36a64294e78bf8b08c7",
+    "Reranker Cohere": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+    "SEO ТЗ из таблицы": "910ef2bfc552c40d092bcafcdaaf665261de8960f89864da2bcc11e4aaa26dd4",
+    "Scrape a url and get its content1": "4c1b6059747d7af41983025bd524d0cc743f301169c578632f8b8c70e5fc3274",
+    "Sticky Note": "ea4ac37d1a66639725fd8054d3680c514b9d8b2eb1f2529277dda1cd33ad95db",
+    "Sticky Note1": "ed66df74645bc5863ea17a8eb244691fa49da1f8235ab48e310d84e89ada9e23",
+    "Sticky Note10": "09965e046326a922a65ed2b954401194f1cc42e65aac8bb14aa81e7b497bb6cc",
+    "Sticky Note11": "7d3833bc914b9f8ced3cc81b4c8cbd95eda3b4e21cfa389438b4e64a125598eb",
+    "Sticky Note12": "e8b9e7f94df23749696a09076000cf3ace75d851f1239514f91de38c1d0aff92",
+    "Sticky Note14": "f92f45ab33d506bb19da502baaef361122e4544d1ae6144ee76cec00f360cdbf",
+    "Sticky Note18": "b8e5d76cb79007dc0d6b6acf6a8e1f75737d2007e8e7888f5c27de002ac560e0",
+    "Sticky Note2": "4b7f0f3b8d4f4f947fb3ff5fd6d818541d188cfd5a52a17f485a2fa5d5bd327e",
+    "Sticky Note3": "14b05b68153d5d6b2017e436404e1cdde7a5e091485b0f9ffaca44849e155104",
+    "Sticky Note4": "19d24bfb6f9d71e33281ff0e71132245789e9209fcda978167742359030d8516",
+    "Sticky Note5": "42c86d6c1c35e83012fe7cc942d292407eb106c921e38c56c687e6b1ef06b399",
+    "Sticky Note6": "20a64fda81f36b2254c90e54651724c4f597faeecd63cae8bf4baf32f3ff5c33",
+    "Sticky Note7": "b0ba824399bda409cdf5b2218963c2a9825a13e34f0af30c0d4f6363e6a685a6",
+    "Sticky Note8": "dfe4c1a9432ba338767b421b3a2fb49ef1b609b39a696c2db7a0f6612972097c",
+    "Sticky Note9": "f0be18372391625f0cf3e3f4f938e69adf7069ed4aaddf10c24bd1b465b5feaa",
+    "Structured Output Parser": "3bf1f3ba288a3a79f9eac6e17f2a64a981ae3fd403a0b7a99c07006498a173be",
+    "Supabase Vector Store": "bfa2aab1f9709c879f3409d80de197d688eb621debf06cac64ae80d077d66406",
+    "When clicking ‘Execute workflow’": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+    "perplexity": "09c32b070fba6030269346c764488a2fc9fe84b638317686f88670f460c1f728",
+    "БРИФ ДЛЯ ОБОГАЩЕНИЯ КОНТЕНТА СТРАНИЦЫ": "d38ce8a0d684c42036bb0e2024fae4bf9c2eac9363cf1fb668a1c91fca3bf521",
+    "Блок для линковки1": "37c0dfb7ebc162229f612df463adf91c2182c6cdf357202008848c293da5c2c9",
+    "Блок кейсов": "dbc2ccfb7a8cc8377b49474d66da3d76d7f3cf2ba8ed99eed0410f25708b6b04",
+    "Выделяет n-граммы из ключей": "75d208ba91f6c531e22e868e058bea83b4c7333bae5254c03b69dfcc0fa2be6a",
+    "Генерация мета-тегов": "d980d0c40868ab9182e5eb9f24749761e4d3fcf4a7d6afec412bd4cece349fb0",
+    "Для кого пишем": "fe41befe48e10a094af6bc75260c6aba9068bda1ed6dc2b58ef1cba81a80a7ba",
+    "Ждем ветки": "4d0a05401edf440270815f6ccc2a2853d8a030d4a9f3630a850f10a1d66330e4",
+    "Ждем парсинг": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+    "Контекст вашей страницы": "f935b80ba10e2010828c5cfeed4123c90bafccbfb8ab8e274aa74ed73a22680d",
+    "Контроль ключевых слов": "8471374b5bb160b99068b07cd3154fe09daca32f92a86c3409938aebfa9a5095",
+    "Оценщик": "4e60f1ab56db795a79f93d6f8c1150d49ec91686ac5c3ce95e838d9be1111225",
+    "Первая итерация парсинга": "54a96eba12c77ca49771a3b9d7080a90363b99852d4d1f8213b306d1aa0ecb2d",
+    "Первая итерация парсинга1": "600985fe79b4117fca28ed89c52e2fa87470085796ccf745d9943c5d0b447002",
+    "Писатель": "15ec0940194521b67b67ff2770b3eaf9641f86936bdfa4bb2f6a6f1b225ad541",
+    "Подсчет параметров текста": "4760649e0ddb1b8a5906ae7930296d50c9fb134c0a3c1375e34e6f9f1401c2e4",
+    "Поиск исследований": "53767754d707f62681047562d228b978dbade4562ef7d88419386bc5e9a99a1f",
+    "Получаем main контент вашей страницы": "507ceb3cc7e1523c05980ffffe5fc1324bcb19cbb326b72971d0600b7c91f02c",
+    "Получаем чистенькие тексты": "507ceb3cc7e1523c05980ffffe5fc1324bcb19cbb326b72971d0600b7c91f02c",
+    "Правит n-граммы": "353a4f8719c31a5f7bc540cf122a8a438dc098d862e647841a262e4f2ee245e9",
+    "Разбивает URL": "7f3edf319d68f2e42e54b72e06cfdf7c28a3acccdc05700743e4dac887308c9d",
+    "Редактура и проверка вписывания ссылок": "33d90909f0256433c453349e5c5d767e26d375b5dcf87a42007545d0960539c7",
+    "Сбор кейсов": "7272fda087b84955c2339bfbb2843c815d3e659d90a056c37ea22760716848ae",
+    "Сбор кейсов в 1 файл": "d06a8dbf4ac72cb39733102e4eb188cd74767e71262bd2aa476c23ab3c191e67",
+    "Сборка URL для линков1": "d06a8dbf4ac72cb39733102e4eb188cd74767e71262bd2aa476c23ab3c191e67",
+    "Сборка текстов конкурентов": "fb720252db16f8deb05bc27e4ebfcd545c7bdaaf703e302549913bd1b5631ae0",
+    "Ссылки для линковки1": "965238c9fce55210e5d2ac03e5270d08091f5a5191d74d6887e00fdfc522196f",
+    "Тип контекста": "a0d7e31e8308915284724992a0faa579a7d68f1cb0f288584868afe0359056dc",
+    "Финальный вывод": "1aa1b3af204ce28a501b5752c62afa6f64e0f371edfa5c53bcea9ded1476383a",
+    "Цикл": "976f0859a9a6fce7f1861b4dac187652b40c090c842a3debca230d389d33edf6"
+  },
+  "source_read_nodes": [
+    "SEO ТЗ из таблицы",
+    "Сбор кейсов",
+    "Ссылки для линковки1"
+  ],
+  "source_root_keys": [
+    "active",
+    "connections",
+    "meta",
+    "name",
+    "nodes",
+    "settings",
+    "tags"
+  ],
+  "source_workflow_sha256": "966d5149ed4bcb20550859ad0f88670466cddea7992737f3bda5f377d6549c85",
+  "transformed_contract_algorithm": "sha256(canonical-json(sort_keys,separators=comma-colon))",
+  "transformed_node_positions": {
+    "FireCrawl": [
+      160,
+      1888
+    ],
+    "OpenRouter Chat Model": [
+      3936,
+      1872
+    ],
+    "OpenRouter Chat Model2": [
+      5136,
+      2416
+    ],
+    "OpenRouter Chat Model3": [
+      3680,
+      1888
+    ],
+    "OpenRouter Chat Model4": [
+      1216,
+      1840
+    ],
+    "OpenRouter Chat Model5": [
+      5616,
+      2432
+    ],
+    "OpenRouter Chat Model6": [
+      5488,
+      2272
+    ],
+    "OpenRouter Chat Model7": [
+      4432,
+      1872
+    ],
+    "OpenRouter Chat Model8": [
+      3424,
+      1888
+    ],
+    "SEO ТЗ из таблицы": [
+      -2160,
+      1920
+    ],
+    "Sticky Note": [
+      -608,
+      1440
+    ],
+    "Sticky Note1": [
+      -3520,
+      2080
+    ],
+    "Sticky Note10": [
+      3536,
+      2448
+    ],
+    "Sticky Note11": [
+      -3280,
+      1568
+    ],
+    "Sticky Note12": [
+      5936,
+      2144
+    ],
+    "Sticky Note14": [
+      1952,
+      336
+    ],
+    "Sticky Note18": [
+      2096,
+      1216
+    ],
+    "Sticky Note2": [
+      976,
+      1424
+    ],
+    "Sticky Note3": [
+      4400,
+      1152
+    ],
+    "Sticky Note4": [
+      3120,
+      1344
+    ],
+    "Sticky Note5": [
+      4960,
+      1984
+    ],
+    "Sticky Note6": [
+      0,
+      0
+    ],
+    "Sticky Note7": [
+      -1664,
+      1344
+    ],
+    "Sticky Note8": [
+      1440,
+      2144
+    ],
+    "Sticky Note9": [
+      -2512,
+      1504
+    ],
+    "Structured Output Parser": [
+      5600,
+      2288
+    ],
+    "When clicking ‘Execute workflow’": [
+      -3104,
+      1824
+    ],
+    "perplexity": [
+      1504,
+      2208
+    ],
+    "БРИФ ДЛЯ ОБОГАЩЕНИЯ КОНТЕНТА СТРАНИЦЫ": [
+      1216,
+      1632
+    ],
+    "Блок для линковки1": [
+      2672,
+      1680
+    ],
+    "Блок кейсов": [
+      2672,
+      1840
+    ],
+    "Выделяет n-граммы из ключей": [
+      3184,
+      1696
+    ],
+    "Генерация мета-тегов": [
+      5120,
+      2224
+    ],
+    "Для кого пишем": [
+      -2752,
+      2128
+    ],
+    "Ждем ветки": [
+      2880,
+      1696
+    ],
+    "Ждем парсинг": [
+      384,
+      1712
+    ],
+    "Контекст вашей страницы": [
+      -944,
+      1952
+    ],
+    "Контроль ключевых слов": [
+      4448,
+      1664
+    ],
+    "Оценщик": [
+      5504,
+      2128
+    ],
+    "Первая итерация парсинга": [
+      -144,
+      1808
+    ],
+    "Первая итерация парсинга1": [
+      -1408,
+      1776
+    ],
+    "Писатель": [
+      3680,
+      1664
+    ],
+    "Подсчет параметров текста": [
+      4256,
+      1664
+    ],
+    "Поиск исследований": [
+      1488,
+      1824
+    ],
+    "Получаем main контент вашей страницы": [
+      -1200,
+      1824
+    ],
+    "Получаем чистенькие тексты": [
+      576,
+      1728
+    ],
+    "Правит n-граммы": [
+      3424,
+      1664
+    ],
+    "Разбивает URL": [
+      -432,
+      1808
+    ],
+    "Редактура и проверка вписывания ссылок": [
+      3952,
+      1664
+    ],
+    "Сбор кейсов": [
+      2256,
+      1840
+    ],
+    "Сбор кейсов в 1 файл": [
+      2464,
+      1840
+    ],
+    "Сборка URL для линков1": [
+      2448,
+      1680
+    ],
+    "Сборка текстов конкурентов": [
+      1072,
+      1728
+    ],
+    "Ссылки для линковки1": [
+      2256,
+      1680
+    ],
+    "Тип контекста": [
+      -1584,
+      1936
+    ],
+    "Финальный вывод": [
+      6016,
+      2192
+    ],
+    "Цикл": [
+      -1776,
+      1872
+    ]
+  },
+  "transformed_parameter_sha256": {
+    "FireCrawl": "308548a3be4ddeab62ce68ff5d3885391213ca00ab3d322c3fcbf05d82227808",
+    "OpenRouter Chat Model": "1ea53c20323755e8d321b644e384d31967bb98b44756f712f009d0ed347247b1",
+    "OpenRouter Chat Model2": "20ecf2df65e54abbf849fb4d10c2fe4850c2da1da75eea9968776c7642c3335c",
+    "OpenRouter Chat Model3": "747aac5ef828b5b533414df56bc8e5fa9468c9584b9062044ff54009d3861452",
+    "OpenRouter Chat Model4": "c5adcba499d7a9abe60ebb7b3258d6128d90c77c7786d48c8994f273466d8188",
+    "OpenRouter Chat Model5": "c3777719f6f1398022817a29627c54f934687efd1ad17b6fd3d7db9a65f1667e",
+    "OpenRouter Chat Model6": "6b9d0b1c5235de6ae0aded5c0b7bebe0f66749bd18a20694aba9ed0e2087e94c",
+    "OpenRouter Chat Model7": "cfd531074bfe1bae5049b52f822a2a60187d101750f2b27e9366a9bc1452ec30",
+    "OpenRouter Chat Model8": "cfd531074bfe1bae5049b52f822a2a60187d101750f2b27e9366a9bc1452ec30",
+    "SEO ТЗ из таблицы": "b18b7716def75cb0291319542cc19bad48f27877f8a282e8cf490fb73c691f45",
+    "Sticky Note": "ea4ac37d1a66639725fd8054d3680c514b9d8b2eb1f2529277dda1cd33ad95db",
+    "Sticky Note1": "ed66df74645bc5863ea17a8eb244691fa49da1f8235ab48e310d84e89ada9e23",
+    "Sticky Note10": "09965e046326a922a65ed2b954401194f1cc42e65aac8bb14aa81e7b497bb6cc",
+    "Sticky Note11": "7d3833bc914b9f8ced3cc81b4c8cbd95eda3b4e21cfa389438b4e64a125598eb",
+    "Sticky Note12": "e8b9e7f94df23749696a09076000cf3ace75d851f1239514f91de38c1d0aff92",
+    "Sticky Note14": "f92f45ab33d506bb19da502baaef361122e4544d1ae6144ee76cec00f360cdbf",
+    "Sticky Note18": "b8e5d76cb79007dc0d6b6acf6a8e1f75737d2007e8e7888f5c27de002ac560e0",
+    "Sticky Note2": "4b7f0f3b8d4f4f947fb3ff5fd6d818541d188cfd5a52a17f485a2fa5d5bd327e",
+    "Sticky Note3": "14b05b68153d5d6b2017e436404e1cdde7a5e091485b0f9ffaca44849e155104",
+    "Sticky Note4": "19d24bfb6f9d71e33281ff0e71132245789e9209fcda978167742359030d8516",
+    "Sticky Note5": "42c86d6c1c35e83012fe7cc942d292407eb106c921e38c56c687e6b1ef06b399",
+    "Sticky Note6": "20a64fda81f36b2254c90e54651724c4f597faeecd63cae8bf4baf32f3ff5c33",
+    "Sticky Note7": "b0ba824399bda409cdf5b2218963c2a9825a13e34f0af30c0d4f6363e6a685a6",
+    "Sticky Note8": "dfe4c1a9432ba338767b421b3a2fb49ef1b609b39a696c2db7a0f6612972097c",
+    "Sticky Note9": "f0be18372391625f0cf3e3f4f938e69adf7069ed4aaddf10c24bd1b465b5feaa",
+    "Structured Output Parser": "3bf1f3ba288a3a79f9eac6e17f2a64a981ae3fd403a0b7a99c07006498a173be",
+    "When clicking ‘Execute workflow’": "a81784ecc21ca9bd123c685a82543e3b75bf9d15df8c27342c12d65f4a2bb0ab",
+    "perplexity": "c5adcba499d7a9abe60ebb7b3258d6128d90c77c7786d48c8994f273466d8188",
+    "БРИФ ДЛЯ ОБОГАЩЕНИЯ КОНТЕНТА СТРАНИЦЫ": "d38ce8a0d684c42036bb0e2024fae4bf9c2eac9363cf1fb668a1c91fca3bf521",
+    "Блок для линковки1": "37c0dfb7ebc162229f612df463adf91c2182c6cdf357202008848c293da5c2c9",
+    "Блок кейсов": "dbc2ccfb7a8cc8377b49474d66da3d76d7f3cf2ba8ed99eed0410f25708b6b04",
+    "Выделяет n-граммы из ключей": "75d208ba91f6c531e22e868e058bea83b4c7333bae5254c03b69dfcc0fa2be6a",
+    "Генерация мета-тегов": "d980d0c40868ab9182e5eb9f24749761e4d3fcf4a7d6afec412bd4cece349fb0",
+    "Для кого пишем": "7c1d5c9667ec0a5509a0d8c39ff3c8794f3e97d809eddd86f5350655249254d5",
+    "Ждем ветки": "4d0a05401edf440270815f6ccc2a2853d8a030d4a9f3630a850f10a1d66330e4",
+    "Ждем парсинг": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+    "Контекст вашей страницы": "f935b80ba10e2010828c5cfeed4123c90bafccbfb8ab8e274aa74ed73a22680d",
+    "Контроль ключевых слов": "8471374b5bb160b99068b07cd3154fe09daca32f92a86c3409938aebfa9a5095",
+    "Оценщик": "4e60f1ab56db795a79f93d6f8c1150d49ec91686ac5c3ce95e838d9be1111225",
+    "Первая итерация парсинга": "54a96eba12c77ca49771a3b9d7080a90363b99852d4d1f8213b306d1aa0ecb2d",
+    "Первая итерация парсинга1": "600985fe79b4117fca28ed89c52e2fa87470085796ccf745d9943c5d0b447002",
+    "Писатель": "5d2f9222c4ce64ff3a7439b7f946e58489df19822cee51ff9f3d1d346d6aebd0",
+    "Подсчет параметров текста": "4760649e0ddb1b8a5906ae7930296d50c9fb134c0a3c1375e34e6f9f1401c2e4",
+    "Поиск исследований": "53767754d707f62681047562d228b978dbade4562ef7d88419386bc5e9a99a1f",
+    "Получаем main контент вашей страницы": "507ceb3cc7e1523c05980ffffe5fc1324bcb19cbb326b72971d0600b7c91f02c",
+    "Получаем чистенькие тексты": "507ceb3cc7e1523c05980ffffe5fc1324bcb19cbb326b72971d0600b7c91f02c",
+    "Правит n-граммы": "353a4f8719c31a5f7bc540cf122a8a438dc098d862e647841a262e4f2ee245e9",
+    "Разбивает URL": "7f3edf319d68f2e42e54b72e06cfdf7c28a3acccdc05700743e4dac887308c9d",
+    "Редактура и проверка вписывания ссылок": "33d90909f0256433c453349e5c5d767e26d375b5dcf87a42007545d0960539c7",
+    "Сбор кейсов": "28edb1e96ecc115e59f35038fa050ae286efd331249889e3f77ab0a0891f7b36",
+    "Сбор кейсов в 1 файл": "d06a8dbf4ac72cb39733102e4eb188cd74767e71262bd2aa476c23ab3c191e67",
+    "Сборка URL для линков1": "d06a8dbf4ac72cb39733102e4eb188cd74767e71262bd2aa476c23ab3c191e67",
+    "Сборка текстов конкурентов": "fb720252db16f8deb05bc27e4ebfcd545c7bdaaf703e302549913bd1b5631ae0",
+    "Ссылки для линковки1": "866803ae09ab51649ec66b5b9cc9388eb54ee4810bd96ecdaf92d5d40b9b80ea",
+    "Тип контекста": "a0d7e31e8308915284724992a0faa579a7d68f1cb0f288584868afe0359056dc",
+    "Финальный вывод": "d4dbdaae0e0e1a9d1e575437a87f480f4a59edc328e0cfc8d721281571ea4ab6",
+    "Цикл": "976f0859a9a6fce7f1861b4dac187652b40c090c842a3debca230d389d33edf6"
+  },
+  "transformed_root_keys": [
+    "active",
+    "connections",
+    "meta",
+    "name",
+    "nodes",
+    "settings",
+    "tags"
+  ],
+  "transformed_workflow_sha256": "ea6d7eac374b3273bf3622e020e471156ba8ce5498350a74f8dcdee25203faa9"
+}
