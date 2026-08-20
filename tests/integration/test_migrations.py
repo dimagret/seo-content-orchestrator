@@ -31,6 +31,10 @@ EXPECTED_TABLES = {
     "job_execution_runs",
     "job_stage_retry_budgets",
     "runner_heartbeats",
+    "sheet_export_attempts",
+    "sheet_export_claims",
+    "sheet_export_plans",
+    "sheet_export_receipts",
     "schema_migrations",
 }
 
@@ -190,14 +194,14 @@ def test_connect_configures_durability_and_busy_timeout(tmp_path: Path) -> None:
         conn.close()
 
 
-def test_migrate_applies_ordered_versions_through_six_idempotently(tmp_path: Path) -> None:
+def test_migrate_applies_ordered_versions_through_seven_idempotently(tmp_path: Path) -> None:
     conn = connect(tmp_path / "orchestrator.db")
     try:
-        assert migrate(conn) == 6
-        assert migrate(conn) == 6
+        assert migrate(conn) == 7
+        assert migrate(conn) == 7
         assert conn.execute(
             "SELECT version FROM schema_migrations ORDER BY version"
-        ).fetchall() == [(1,), (2,), (3,), (4,), (5,), (6,)]
+        ).fetchall() == [(1,), (2,), (3,), (4,), (5,), (6,), (7,)]
         job_columns = {
             row[1]: (row[2], row[3]) for row in conn.execute("PRAGMA table_info(jobs)")
         }
@@ -460,10 +464,10 @@ def test_migrate_upgrades_committed_v2_to_current_schema_without_rewriting_histo
         _insert_job(conn, "existing-v2-job", "RUNNING")
         conn.commit()
 
-        assert migrate(conn) == 6
+        assert migrate(conn) == 7
         assert conn.execute(
             "SELECT version FROM schema_migrations ORDER BY version"
-        ).fetchall() == [(1,), (2,), (3,), (4,), (5,), (6,)]
+        ).fetchall() == [(1,), (2,), (3,), (4,), (5,), (6,), (7,)]
         assert "superseded_by_job_id" in {
             row[1] for row in conn.execute("PRAGMA table_info(jobs)")
         }
@@ -485,6 +489,53 @@ def test_migrate_upgrades_committed_v2_to_current_schema_without_rewriting_histo
         conn.close()
 
 
+def test_migrate_v7_accepts_duplicate_legacy_sheet_export_approvals(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = connect(tmp_path / "legacy-sheet-approvals.db")
+    migrations = migration_module._MIGRATIONS
+    latest = migration_module._LATEST_VERSION
+    monkeypatch.setattr(migration_module, "_MIGRATIONS", migrations[:6])
+    monkeypatch.setattr(migration_module, "_LATEST_VERSION", 6)
+    try:
+        assert migrate(conn) == 6
+        _insert_brief_and_snapshot(conn)
+        _insert_job(conn, "job-legacy", "SUCCEEDED")
+        for approval_id in ("approval-one", "approval-two"):
+            conn.execute(
+                """INSERT INTO approval_records(
+                       approval_record_id, job_id, approval_type,
+                       snapshot_hash, plan_fingerprint, approved_by,
+                       approved_at, expires_at
+                   ) VALUES (?, ?, 'sheet_export', ?, ?, 'reviewer', ?, NULL)""",
+                (
+                    approval_id,
+                    "job-legacy",
+                    "a" * 64,
+                    "d" * 64,
+                    "2026-08-20T12:00:00+00:00",
+                ),
+            )
+        conn.commit()
+
+        monkeypatch.setattr(migration_module, "_MIGRATIONS", migrations)
+        monkeypatch.setattr(migration_module, "_LATEST_VERSION", latest)
+
+        assert migrate(conn) == 7
+        assert conn.execute(
+            """SELECT count(*) FROM approval_records
+               WHERE job_id = 'job-legacy'
+                 AND approval_type = 'sheet_export'"""
+        ).fetchone() == (2,)
+        assert conn.execute(
+            """SELECT count(*) FROM sqlite_master
+               WHERE type = 'table' AND name = 'sheet_export_plans'"""
+        ).fetchone() == (1,)
+    finally:
+        conn.close()
+
+
 def test_migrate_upgrades_v1_without_replaying_it_and_preserves_existing_rows(
     tmp_path: Path,
 ) -> None:
@@ -500,10 +551,10 @@ def test_migrate_upgrades_v1_without_replaying_it_and_preserves_existing_rows(
         )
         conn.commit()
 
-        assert migrate(conn) == 6
+        assert migrate(conn) == 7
         assert conn.execute(
             "SELECT version FROM schema_migrations ORDER BY version"
-        ).fetchall() == [(1,), (2,), (3,), (4,), (5,), (6,)]
+        ).fetchall() == [(1,), (2,), (3,), (4,), (5,), (6,), (7,)]
         assert conn.execute(
             """SELECT job_id, state, plan_json, plan_fingerprint
                FROM jobs WHERE job_id = ?""",
@@ -515,7 +566,7 @@ def test_migrate_upgrades_v1_without_replaying_it_and_preserves_existing_rows(
             ("legacy-job",),
         ).fetchall() == [(None, "PLANNED", "before-upgrade")]
 
-        assert migrate(conn) == 6
+        assert migrate(conn) == 7
         assert conn.execute("SELECT COUNT(*) FROM jobs").fetchone() == (1,)
         assert conn.execute("SELECT COUNT(*) FROM job_transitions").fetchone() == (1,)
     finally:

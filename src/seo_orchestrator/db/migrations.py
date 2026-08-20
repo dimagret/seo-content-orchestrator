@@ -4,7 +4,7 @@ import sqlite3
 
 from seo_orchestrator.errors import MigrationError
 
-_LATEST_VERSION = 6
+_LATEST_VERSION = 7
 
 _MIGRATION_0001 = (
     """
@@ -701,6 +701,156 @@ _MIGRATION_0006 = (
     """,
 )
 
+_MIGRATION_0007 = (
+    """
+    CREATE TABLE sheet_export_plans (
+        company_id TEXT NOT NULL,
+        job_id TEXT NOT NULL,
+        artifact_hash TEXT NOT NULL,
+        spreadsheet_id TEXT NOT NULL,
+        sheet_name TEXT NOT NULL,
+        row_selector TEXT NOT NULL,
+        column_map_json BLOB NOT NULL,
+        payload_json BLOB NOT NULL,
+        plan_fingerprint TEXT NOT NULL,
+        prepared_at TEXT NOT NULL,
+        PRIMARY KEY (company_id, job_id, plan_fingerprint),
+        FOREIGN KEY (company_id, job_id) REFERENCES jobs(company_id, job_id),
+        CHECK (length(artifact_hash) = 64 AND artifact_hash = lower(artifact_hash)),
+        CHECK (length(plan_fingerprint) = 64 AND plan_fingerprint = lower(plan_fingerprint)),
+        CHECK (spreadsheet_id = trim(spreadsheet_id) AND spreadsheet_id != ''),
+        CHECK (sheet_name = trim(sheet_name) AND sheet_name != ''),
+        CHECK (row_selector = trim(row_selector) AND row_selector != ''),
+        CHECK (is_utc_timestamp(prepared_at) = 1)
+    )
+    """,
+    """
+    CREATE TRIGGER sheet_export_plans_immutable_update
+    BEFORE UPDATE ON sheet_export_plans
+    FOR EACH ROW
+    BEGIN
+        SELECT RAISE(ABORT, 'sheet export plans are immutable');
+    END
+    """,
+    """
+    CREATE TRIGGER sheet_export_plans_immutable_delete
+    BEFORE DELETE ON sheet_export_plans
+    FOR EACH ROW
+    BEGIN
+        SELECT RAISE(ABORT, 'sheet export plans are append-only');
+    END
+    """,
+
+    """
+    CREATE TABLE sheet_export_claims (
+        company_id TEXT NOT NULL,
+        job_id TEXT NOT NULL,
+        approval_record_id TEXT NOT NULL UNIQUE,
+        plan_fingerprint TEXT NOT NULL,
+        claimed_at TEXT NOT NULL,
+        PRIMARY KEY (company_id, job_id),
+        FOREIGN KEY (company_id, job_id, plan_fingerprint)
+            REFERENCES sheet_export_plans(company_id, job_id, plan_fingerprint),
+        FOREIGN KEY (approval_record_id) REFERENCES approval_records(approval_record_id),
+        CHECK (length(plan_fingerprint) = 64 AND plan_fingerprint = lower(plan_fingerprint)),
+        CHECK (is_utc_timestamp(claimed_at) = 1)
+    )
+    """,
+    """
+    CREATE UNIQUE INDEX sheet_export_claim_approval_binding
+    ON sheet_export_claims(company_id, job_id, approval_record_id)
+    """,
+    """
+    CREATE TRIGGER sheet_export_claims_validate_approval
+    BEFORE INSERT ON sheet_export_claims
+    BEGIN
+        SELECT CASE WHEN NOT EXISTS (
+            SELECT 1 FROM approval_records AS approval
+            WHERE approval.approval_record_id = NEW.approval_record_id
+              AND approval.job_id = NEW.job_id
+              AND approval.approval_type = 'sheet_export'
+              AND approval.plan_fingerprint = NEW.plan_fingerprint
+        ) THEN RAISE(ABORT, 'sheet export claim approval mismatch') END;
+    END
+    """,
+    """
+    CREATE TRIGGER sheet_export_claims_immutable_update
+    BEFORE UPDATE ON sheet_export_claims
+    FOR EACH ROW
+    BEGIN
+        SELECT RAISE(ABORT, 'sheet export claims are immutable');
+    END
+    """,
+    """
+    CREATE TRIGGER sheet_export_claims_immutable_delete
+    BEFORE DELETE ON sheet_export_claims
+    FOR EACH ROW
+    BEGIN
+        SELECT RAISE(ABORT, 'sheet export claims are append-only');
+    END
+    """,
+    """
+    CREATE TABLE sheet_export_attempts (
+        company_id TEXT NOT NULL,
+        job_id TEXT NOT NULL,
+        approval_record_id TEXT NOT NULL UNIQUE,
+        attempt_id TEXT NOT NULL UNIQUE,
+        started_at TEXT NOT NULL,
+        PRIMARY KEY (company_id, job_id),
+        FOREIGN KEY (company_id, job_id, approval_record_id)
+            REFERENCES sheet_export_claims(
+                company_id, job_id, approval_record_id
+            ),
+        CHECK (is_utc_timestamp(started_at) = 1)
+    )
+    """,
+    """
+    CREATE TRIGGER sheet_export_attempts_immutable_update
+    BEFORE UPDATE ON sheet_export_attempts
+    FOR EACH ROW
+    BEGIN
+        SELECT RAISE(ABORT, 'sheet export attempts are immutable');
+    END
+    """,
+    """
+    CREATE TABLE sheet_export_receipts (
+        company_id TEXT NOT NULL,
+        job_id TEXT NOT NULL,
+        approval_record_id TEXT NOT NULL UNIQUE,
+        export_key TEXT NOT NULL,
+        destination_reference TEXT NOT NULL,
+        exported_at TEXT NOT NULL,
+        PRIMARY KEY (company_id, job_id, export_key),
+        FOREIGN KEY (company_id, job_id, approval_record_id)
+            REFERENCES sheet_export_claims(
+                company_id, job_id, approval_record_id
+            ),
+        CHECK (length(export_key) = 64 AND export_key = lower(export_key)),
+        CHECK (
+            destination_reference = trim(destination_reference)
+            AND destination_reference != ''
+        ),
+        CHECK (is_utc_timestamp(exported_at) = 1)
+    )
+    """,
+    """
+    CREATE TRIGGER sheet_export_receipts_immutable_update
+    BEFORE UPDATE ON sheet_export_receipts
+    FOR EACH ROW
+    BEGIN
+        SELECT RAISE(ABORT, 'sheet export receipts are immutable');
+    END
+    """,
+    """
+    CREATE TRIGGER sheet_export_receipts_immutable_delete
+    BEFORE DELETE ON sheet_export_receipts
+    FOR EACH ROW
+    BEGIN
+        SELECT RAISE(ABORT, 'sheet export receipts are append-only');
+    END
+    """,
+)
+
 _MIGRATIONS = (
     (1, _MIGRATION_0001),
     (2, _MIGRATION_0002),
@@ -708,6 +858,7 @@ _MIGRATIONS = (
     (4, _MIGRATION_0004),
     (5, _MIGRATION_0005),
     (6, _MIGRATION_0006),
+    (7, _MIGRATION_0007),
 )
 
 
