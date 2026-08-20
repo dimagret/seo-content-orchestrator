@@ -1,0 +1,1278 @@
+{
+  "benchmark_id": "stage-b-release-2026-08-20",
+  "candidate_head": "8b61ca38d8de66f2da68b206f1f441f4be0bf68e",
+  "cases": [
+    {
+      "audience_segment_id": "private-car-owners",
+      "audience_version": 1,
+      "brief_id": "brief-0bfcec2b83e4452eac40cc31de3d7d7b",
+      "case_id": "automotive-local",
+      "category": "local_automotive_commercial_service",
+      "company_id": "avtomalyar",
+      "company_profile_version": 1,
+      "compiled_context": {
+        "audience": {
+          "audience_segment_id": "private-car-owners",
+          "audience_version": 1,
+          "budget_range": "Estimate after inspection",
+          "buyer_roles": [
+            "Vehicle owner"
+          ],
+          "company_id": "avtomalyar",
+          "company_or_customer_size": "Individual customer",
+          "created_at": "2026-08-14T12:00:00Z",
+          "decision_cycle": "Several days",
+          "decision_participants": [
+            "Vehicle owner"
+          ],
+          "direction_id": "car-painting",
+          "direction_version": 1,
+          "geography": "Invented local service area",
+          "industry": "Consumer vehicle care",
+          "jobs_to_be_done": [
+            "Restore a vehicle panel finish"
+          ],
+          "minimum_expectations": [
+            "Clear estimate"
+          ],
+          "name": "Private Car Owners",
+          "objection_responses": [
+            "Explain inspection and written scope"
+          ],
+          "objections": [
+            "Estimate uncertainty"
+          ],
+          "pains_and_risks": [
+            "Unclear preparation quality"
+          ],
+          "preferred_content_formats": [
+            "Service guide"
+          ],
+          "purchase_triggers": [
+            "Visible paint damage"
+          ],
+          "selection_criteria": [
+            "Documented preparation process"
+          ],
+          "updated_at": "2026-08-14T12:00:00Z"
+        },
+        "brief": {
+          "audience_segment_id": "private-car-owners",
+          "audience_version": 1,
+          "brief_id": "brief-0bfcec2b83e4452eac40cc31de3d7d7b",
+          "company_id": "avtomalyar",
+          "company_profile_version": 1,
+          "competitor_urls": [
+            "https://example.test/avtomalyar-reference"
+          ],
+          "created_at": "2026-08-20T20:01:47.176121Z",
+          "created_by": "local-e2e-actor",
+          "current_page_context": "Invented benchmark-only source context marker-cobalt-panel.",
+          "current_page_url": null,
+          "direction_id": "car-painting",
+          "direction_version": 1,
+          "goal": "Explain the invented Car Painting offer for benchmark evaluation.",
+          "keywords": [
+            "invented car-painting service"
+          ],
+          "locale": "en-US",
+          "lsi_terms": [
+            "marker-cobalt-panel"
+          ],
+          "output_sheet_target": null,
+          "page_structure": [
+            "Service overview",
+            "Preparation",
+            "Estimate"
+          ],
+          "page_type": "service-page",
+          "primary_keyword": "invented car-painting service",
+          "target_language": "en",
+          "updated_at": "2026-08-20T20:01:47.183203Z"
+        },
+        "company": {
+          "allowed_claims": [
+            "Written scope before work begins"
+          ],
+          "brand_summary": "Invented benchmark entity marked marker-cobalt-panel; no real-world claims.",
+          "case_references": [
+            "Invented compact-car color matching case"
+          ],
+          "certifications": [
+            "Invented technical training"
+          ],
+          "commercial_model": "Direct service by appointment.",
+          "company_id": "avtomalyar",
+          "company_profile_id": "avtomalyar-profile",
+          "company_profile_version": 1,
+          "compliance_requirements": [
+            "Mark all examples as invented"
+          ],
+          "created_at": "2026-08-20T20:01:47.160698Z",
+          "default_language": "en",
+          "default_locale": "en-US",
+          "forbidden_claims": [
+            "Guaranteed flawless result",
+            "Factory-perfect match guaranteed"
+          ],
+          "name": "Avtomalyar Studio",
+          "negative_voice_examples": [
+            "A perfect result is guaranteed."
+          ],
+          "positive_voice_examples": [
+            "We explain each preparation step."
+          ],
+          "pricing_overview": "Written estimates after an invented inspection workflow.",
+          "products_services_overview": "Invented paint consultation and panel refinishing services.",
+          "proof_points": [
+            "Invented sample portfolio"
+          ],
+          "reading_level": "General audience.",
+          "service_geography": "Invented local service area.",
+          "tone_of_voice": "Practical, calm, and specific.",
+          "tools_and_process": [
+            "Color assessment",
+            "Surface preparation"
+          ],
+          "updated_at": "2026-08-20T20:01:47.160698Z",
+          "value_propositions": [
+            "Documented preparation steps"
+          ]
+        },
+        "direction": {
+          "allowed_claims": [
+            "A written scope is provided"
+          ],
+          "category_context": "Invented vehicle paint service category.",
+          "company_id": "avtomalyar",
+          "company_profile_version": 1,
+          "created_at": "2026-08-14T12:00:00Z",
+          "default_language": "en",
+          "default_locale": "en-US",
+          "default_page_structure": [
+            "Service overview",
+            "Preparation",
+            "Estimate"
+          ],
+          "direction_cases": [
+            "Invented hatchback panel example"
+          ],
+          "direction_id": "car-painting",
+          "direction_proof_points": [
+            "Invented finish sample"
+          ],
+          "direction_value_propositions": [
+            "Preparation steps are documented"
+          ],
+          "direction_version": 1,
+          "forbidden_claims": [
+            "Guaranteed flawless result",
+            "Factory-perfect match guaranteed"
+          ],
+          "internal_link_catalog": [
+            "/invented-car-painting"
+          ],
+          "name": "Car Painting",
+          "offerings": [
+            "Invented refinishing consultation"
+          ],
+          "prices_and_tariffs": "Written estimates after inspection.",
+          "updated_at": "2026-08-14T12:00:00Z"
+        },
+        "prompt_set_version": 1,
+        "schema_version": 1
+      },
+      "contamination_tokens": {
+        "case_references": [
+          "Invented compact-car color matching case",
+          "Invented hatchback panel example"
+        ],
+        "geographies": [
+          "Invented local service area.",
+          "Invented local service area"
+        ],
+        "identities": [
+          "avtomalyar",
+          "Avtomalyar Studio",
+          "car-painting",
+          "Car Painting",
+          "private-car-owners",
+          "Private Car Owners"
+        ],
+        "markers": [
+          "marker-cobalt-panel"
+        ],
+        "offers": [
+          "Invented refinishing consultation"
+        ],
+        "urls": [
+          "https://example.test/avtomalyar-reference",
+          "/invented-car-painting"
+        ]
+      },
+      "direction_id": "car-painting",
+      "direction_version": 1,
+      "evaluator_rubric": {
+        "factual_support": 15,
+        "human_editorial_score": 15,
+        "internal_links": 5,
+        "keyword_naturalness": 10,
+        "keyword_overuse": 10,
+        "language_locale_compliance": 10,
+        "meta_schema": 5,
+        "required_section_coverage": 15,
+        "source_traceability": 15
+      },
+      "expected_required_sections": [
+        "Service overview",
+        "Preparation",
+        "Estimate"
+      ],
+      "prohibited_claims": [
+        "Guaranteed flawless result",
+        "Factory-perfect match guaranteed"
+      ],
+      "prompt_set_version": 1,
+      "results": {
+        "source_path": {
+          "cross_company_contamination_occurrences": null,
+          "deviation": "G4 absent: provider/paid source execution is prohibited.",
+          "metrics": {
+            "factual_support": null,
+            "human_editorial_score": null,
+            "internal_links": null,
+            "keyword_naturalness": null,
+            "keyword_overuse": null,
+            "language_locale_compliance": null,
+            "meta_schema": null,
+            "required_section_coverage": null,
+            "source_traceability": null
+          },
+          "paid_call_count": 0,
+          "prohibited_claim_occurrences": null,
+          "retry_count": 0,
+          "runtime_ms": null,
+          "status": "not_run"
+        },
+        "universal_path": {
+          "cross_company_contamination_occurrences": null,
+          "deviation": "Universal n8n path remains literal-false/local-only and Cloud execution is unverified.",
+          "metrics": {
+            "factual_support": null,
+            "human_editorial_score": null,
+            "internal_links": null,
+            "keyword_naturalness": null,
+            "keyword_overuse": null,
+            "language_locale_compliance": null,
+            "meta_schema": null,
+            "required_section_coverage": null,
+            "source_traceability": null
+          },
+          "paid_call_count": 0,
+          "prohibited_claim_occurrences": null,
+          "retry_count": 0,
+          "runtime_ms": null,
+          "status": "not_run"
+        }
+      },
+      "snapshot_hash": "4bdfd2eae64e41a9e7128b33940231aeb1f5174e6f9430aed1b2213a5d152d80",
+      "unique_contamination_markers": [
+        "marker-cobalt-panel"
+      ]
+    },
+    {
+      "audience_segment_id": "operations-directors",
+      "audience_version": 1,
+      "brief_id": "brief-b2b-complex",
+      "case_id": "b2b-complex",
+      "category": "b2b_complex_service",
+      "company_id": "northstar-b2b",
+      "company_profile_version": 1,
+      "compiled_context": {
+        "audience": {
+          "audience_segment_id": "operations-directors",
+          "audience_version": 1,
+          "budget_range": "Invented marker-copper-orbit budget range.",
+          "buyer_roles": [
+            "Invented marker-copper-orbit buyer roles"
+          ],
+          "company_id": "northstar-b2b",
+          "company_or_customer_size": "Invented marker-copper-orbit company or customer size.",
+          "created_at": "2026-08-14T12:00:00Z",
+          "decision_cycle": "Invented marker-copper-orbit decision cycle.",
+          "decision_participants": [
+            "Invented marker-copper-orbit decision participants"
+          ],
+          "direction_id": "process-integration",
+          "direction_version": 1,
+          "geography": "Invented marker-copper-orbit geography.",
+          "industry": "Invented marker-copper-orbit industry.",
+          "jobs_to_be_done": [
+            "Invented marker-copper-orbit jobs to be done"
+          ],
+          "minimum_expectations": [
+            "Invented marker-copper-orbit minimum expectations"
+          ],
+          "name": "Operations Directors",
+          "objection_responses": [
+            "Invented marker-copper-orbit objection responses"
+          ],
+          "objections": [
+            "Invented marker-copper-orbit objections"
+          ],
+          "pains_and_risks": [
+            "Invented marker-copper-orbit pains and risks"
+          ],
+          "preferred_content_formats": [
+            "Invented marker-copper-orbit preferred content formats"
+          ],
+          "purchase_triggers": [
+            "Invented marker-copper-orbit purchase triggers"
+          ],
+          "selection_criteria": [
+            "Invented marker-copper-orbit selection criteria"
+          ],
+          "updated_at": "2026-08-14T12:00:00Z"
+        },
+        "brief": {
+          "audience_segment_id": "operations-directors",
+          "audience_version": 1,
+          "brief_id": "brief-b2b-complex",
+          "company_id": "northstar-b2b",
+          "company_profile_version": 1,
+          "competitor_urls": [
+            "https://example.test/northstar-b2b-reference"
+          ],
+          "created_at": "2026-08-20T20:01:47.176121Z",
+          "created_by": "local-e2e-actor",
+          "current_page_context": "Invented benchmark-only source context marker-copper-orbit.",
+          "current_page_url": null,
+          "direction_id": "process-integration",
+          "direction_version": 1,
+          "goal": "Explain the invented Process Integration offer for benchmark evaluation.",
+          "keywords": [
+            "invented process integration service"
+          ],
+          "locale": "en-US",
+          "lsi_terms": [
+            "marker-copper-orbit"
+          ],
+          "output_sheet_target": null,
+          "page_structure": [
+            "Business context",
+            "Integration approach",
+            "Risk controls",
+            "Decision criteria"
+          ],
+          "page_type": "service-page",
+          "primary_keyword": "invented process integration service",
+          "target_language": "en",
+          "updated_at": "2026-08-20T20:01:47.183203Z"
+        },
+        "company": {
+          "allowed_claims": [
+            "Invented marker-copper-orbit allowed claims"
+          ],
+          "brand_summary": "Invented benchmark entity marked marker-copper-orbit; no real-world claims.",
+          "case_references": [
+            "Invented marker-copper-orbit case references"
+          ],
+          "certifications": [
+            "Invented marker-copper-orbit certifications"
+          ],
+          "commercial_model": "Invented marker-copper-orbit commercial model.",
+          "company_id": "northstar-b2b",
+          "company_profile_id": "northstar-b2b-profile",
+          "company_profile_version": 1,
+          "compliance_requirements": [
+            "Invented marker-copper-orbit compliance requirements"
+          ],
+          "created_at": "2026-08-20T20:01:47.160698Z",
+          "default_language": "en",
+          "default_locale": "en-US",
+          "forbidden_claims": [
+            "Guaranteed ROI",
+            "Zero-risk integration",
+            "Market-leading without evidence"
+          ],
+          "name": "Northstar Systems Lab",
+          "negative_voice_examples": [
+            "Invented marker-copper-orbit negative voice examples"
+          ],
+          "positive_voice_examples": [
+            "Invented marker-copper-orbit positive voice examples"
+          ],
+          "pricing_overview": "Invented marker-copper-orbit pricing overview.",
+          "products_services_overview": "Invented marker-copper-orbit products services overview.",
+          "proof_points": [
+            "Invented marker-copper-orbit proof points"
+          ],
+          "reading_level": "Invented marker-copper-orbit reading level.",
+          "service_geography": "Invented marker-copper-orbit service geography.",
+          "tone_of_voice": "Invented marker-copper-orbit tone of voice.",
+          "tools_and_process": [
+            "Invented marker-copper-orbit tools and process"
+          ],
+          "updated_at": "2026-08-20T20:01:47.160698Z",
+          "value_propositions": [
+            "Invented marker-copper-orbit value propositions"
+          ]
+        },
+        "direction": {
+          "allowed_claims": [
+            "Invented marker-copper-orbit allowed claims"
+          ],
+          "category_context": "Invented marker-copper-orbit category context.",
+          "company_id": "northstar-b2b",
+          "company_profile_version": 1,
+          "created_at": "2026-08-14T12:00:00Z",
+          "default_language": "en",
+          "default_locale": "en-US",
+          "default_page_structure": [
+            "Business context",
+            "Integration approach",
+            "Risk controls",
+            "Decision criteria"
+          ],
+          "direction_cases": [
+            "Invented marker-copper-orbit direction cases"
+          ],
+          "direction_id": "process-integration",
+          "direction_proof_points": [
+            "Invented marker-copper-orbit direction proof points"
+          ],
+          "direction_value_propositions": [
+            "Invented marker-copper-orbit direction value propositions"
+          ],
+          "direction_version": 1,
+          "forbidden_claims": [
+            "Guaranteed ROI",
+            "Zero-risk integration",
+            "Market-leading without evidence"
+          ],
+          "internal_link_catalog": [
+            "/invented-process-integration"
+          ],
+          "name": "Process Integration",
+          "offerings": [
+            "Invented marker-copper-orbit offerings"
+          ],
+          "prices_and_tariffs": "Invented marker-copper-orbit prices and tariffs.",
+          "updated_at": "2026-08-14T12:00:00Z"
+        },
+        "prompt_set_version": 1,
+        "schema_version": 1
+      },
+      "contamination_tokens": {
+        "case_references": [
+          "Invented marker-copper-orbit case references",
+          "Invented marker-copper-orbit direction cases"
+        ],
+        "geographies": [
+          "Invented marker-copper-orbit service geography.",
+          "Invented marker-copper-orbit geography."
+        ],
+        "identities": [
+          "northstar-b2b",
+          "Northstar Systems Lab",
+          "process-integration",
+          "Process Integration",
+          "operations-directors",
+          "Operations Directors"
+        ],
+        "markers": [
+          "marker-copper-orbit"
+        ],
+        "offers": [
+          "Invented marker-copper-orbit offerings"
+        ],
+        "urls": [
+          "https://example.test/northstar-b2b-reference",
+          "/invented-process-integration"
+        ]
+      },
+      "direction_id": "process-integration",
+      "direction_version": 1,
+      "evaluator_rubric": {
+        "factual_support": 15,
+        "human_editorial_score": 15,
+        "internal_links": 5,
+        "keyword_naturalness": 10,
+        "keyword_overuse": 10,
+        "language_locale_compliance": 10,
+        "meta_schema": 5,
+        "required_section_coverage": 15,
+        "source_traceability": 15
+      },
+      "expected_required_sections": [
+        "Business context",
+        "Integration approach",
+        "Risk controls",
+        "Decision criteria"
+      ],
+      "prohibited_claims": [
+        "Guaranteed ROI",
+        "Zero-risk integration",
+        "Market-leading without evidence"
+      ],
+      "prompt_set_version": 1,
+      "results": {
+        "source_path": {
+          "cross_company_contamination_occurrences": null,
+          "deviation": "G4 absent: provider/paid source execution is prohibited.",
+          "metrics": {
+            "factual_support": null,
+            "human_editorial_score": null,
+            "internal_links": null,
+            "keyword_naturalness": null,
+            "keyword_overuse": null,
+            "language_locale_compliance": null,
+            "meta_schema": null,
+            "required_section_coverage": null,
+            "source_traceability": null
+          },
+          "paid_call_count": 0,
+          "prohibited_claim_occurrences": null,
+          "retry_count": 0,
+          "runtime_ms": null,
+          "status": "not_run"
+        },
+        "universal_path": {
+          "cross_company_contamination_occurrences": null,
+          "deviation": "Universal n8n path remains literal-false/local-only and Cloud execution is unverified.",
+          "metrics": {
+            "factual_support": null,
+            "human_editorial_score": null,
+            "internal_links": null,
+            "keyword_naturalness": null,
+            "keyword_overuse": null,
+            "language_locale_compliance": null,
+            "meta_schema": null,
+            "required_section_coverage": null,
+            "source_traceability": null
+          },
+          "paid_call_count": 0,
+          "prohibited_claim_occurrences": null,
+          "retry_count": 0,
+          "runtime_ms": null,
+          "status": "not_run"
+        }
+      },
+      "snapshot_hash": "217cb0ee109ba4676b3dd3e9b8a02a65f3c648c75264745c40df08c1b1ec0c0b",
+      "unique_contamination_markers": [
+        "marker-copper-orbit"
+      ]
+    },
+    {
+      "audience_segment_id": "newlyweds",
+      "audience_version": 1,
+      "brief_id": "brief-316f97fbbe154b19bf885f487a5c2fa5",
+      "case_id": "consumer-confectionery",
+      "category": "consumer_confectionery_page",
+      "company_id": "sweet-world",
+      "company_profile_version": 1,
+      "compiled_context": {
+        "audience": {
+          "audience_segment_id": "newlyweds",
+          "audience_version": 1,
+          "budget_range": "Estimate after consultation",
+          "buyer_roles": [
+            "Wedding couple"
+          ],
+          "company_id": "sweet-world",
+          "company_or_customer_size": "Household purchase",
+          "created_at": "2026-08-14T12:00:00Z",
+          "decision_cycle": "Several weeks",
+          "decision_participants": [
+            "Wedding couple"
+          ],
+          "direction_id": "wedding-cakes",
+          "direction_version": 1,
+          "geography": "Invented metropolitan delivery area",
+          "industry": "Private celebrations",
+          "jobs_to_be_done": [
+            "Select a reception cake design"
+          ],
+          "minimum_expectations": [
+            "Documented collection or delivery time"
+          ],
+          "name": "Newlyweds",
+          "objection_responses": [
+            "Review an invented written design summary"
+          ],
+          "objections": [
+            "Design and serving-count uncertainty"
+          ],
+          "pains_and_risks": [
+            "Unclear ordering timeline"
+          ],
+          "preferred_content_formats": [
+            "Planning guide"
+          ],
+          "purchase_triggers": [
+            "Wedding date confirmed"
+          ],
+          "selection_criteria": [
+            "Clear tasting and approval process"
+          ],
+          "updated_at": "2026-08-14T12:00:00Z"
+        },
+        "brief": {
+          "audience_segment_id": "newlyweds",
+          "audience_version": 1,
+          "brief_id": "brief-316f97fbbe154b19bf885f487a5c2fa5",
+          "company_id": "sweet-world",
+          "company_profile_version": 1,
+          "competitor_urls": [
+            "https://example.test/sweet-world-reference"
+          ],
+          "created_at": "2026-08-20T20:01:47.296179Z",
+          "created_by": "local-e2e-actor",
+          "current_page_context": "Invented benchmark-only source context marker-saffron-tier.",
+          "current_page_url": null,
+          "direction_id": "wedding-cakes",
+          "direction_version": 1,
+          "goal": "Explain the invented Wedding Cakes offer for benchmark evaluation.",
+          "keywords": [
+            "invented wedding cake design"
+          ],
+          "locale": "en-US",
+          "lsi_terms": [
+            "marker-saffron-tier"
+          ],
+          "output_sheet_target": null,
+          "page_structure": [
+            "Design options",
+            "Tasting",
+            "Ordering timeline"
+          ],
+          "page_type": "service-page",
+          "primary_keyword": "invented wedding cake design",
+          "target_language": "en",
+          "updated_at": "2026-08-20T20:01:47.302406Z"
+        },
+        "company": {
+          "allowed_claims": [
+            "Written design summary before production"
+          ],
+          "brand_summary": "Invented benchmark entity marked marker-saffron-tier; no real-world claims.",
+          "case_references": [
+            "Invented garden-theme reception cake"
+          ],
+          "certifications": [
+            "Invented food-handling course"
+          ],
+          "commercial_model": "Made-to-order products with scheduled collection.",
+          "company_id": "sweet-world",
+          "company_profile_id": "sweet-world-profile",
+          "company_profile_version": 1,
+          "compliance_requirements": [
+            "Mark all examples as invented"
+          ],
+          "created_at": "2026-08-20T20:01:47.287712Z",
+          "default_language": "en",
+          "default_locale": "en-US",
+          "forbidden_claims": [
+            "Guaranteed identical handmade decorations",
+            "Exact color match guaranteed"
+          ],
+          "name": "Sweet World Atelier",
+          "negative_voice_examples": [
+            "Every cake will be absolutely perfect."
+          ],
+          "positive_voice_examples": [
+            "We confirm the decoration scope in writing."
+          ],
+          "pricing_overview": "Invented tiered estimates based on size and decoration scope.",
+          "products_services_overview": "Invented celebration cake design and tasting consultations.",
+          "proof_points": [
+            "Invented tasting notes archive"
+          ],
+          "reading_level": "General audience.",
+          "service_geography": "Invented metropolitan delivery area.",
+          "tone_of_voice": "Warm, precise, and celebratory.",
+          "tools_and_process": [
+            "Tasting consultation",
+            "Decoration sketch review"
+          ],
+          "updated_at": "2026-08-20T20:01:47.287712Z",
+          "value_propositions": [
+            "Design scope documented before production"
+          ]
+        },
+        "direction": {
+          "allowed_claims": [
+            "A written design summary is provided"
+          ],
+          "category_context": "Invented made-to-order wedding confectionery category.",
+          "company_id": "sweet-world",
+          "company_profile_version": 1,
+          "created_at": "2026-08-14T12:00:00Z",
+          "default_language": "en",
+          "default_locale": "en-US",
+          "default_page_structure": [
+            "Design options",
+            "Tasting",
+            "Ordering timeline"
+          ],
+          "direction_cases": [
+            "Invented two-tier botanical cake example"
+          ],
+          "direction_id": "wedding-cakes",
+          "direction_proof_points": [
+            "Invented design sketch sample"
+          ],
+          "direction_value_propositions": [
+            "Decoration scope reviewed before production"
+          ],
+          "direction_version": 1,
+          "forbidden_claims": [
+            "Guaranteed identical handmade decorations",
+            "Exact color match guaranteed"
+          ],
+          "internal_link_catalog": [
+            "/invented-wedding-cakes"
+          ],
+          "name": "Wedding Cakes",
+          "offerings": [
+            "Invented cake design consultation"
+          ],
+          "prices_and_tariffs": "Invented estimate after serving-count and design review.",
+          "updated_at": "2026-08-14T12:00:00Z"
+        },
+        "prompt_set_version": 1,
+        "schema_version": 1
+      },
+      "contamination_tokens": {
+        "case_references": [
+          "Invented garden-theme reception cake",
+          "Invented two-tier botanical cake example"
+        ],
+        "geographies": [
+          "Invented metropolitan delivery area.",
+          "Invented metropolitan delivery area"
+        ],
+        "identities": [
+          "sweet-world",
+          "Sweet World Atelier",
+          "wedding-cakes",
+          "Wedding Cakes",
+          "newlyweds",
+          "Newlyweds"
+        ],
+        "markers": [
+          "marker-saffron-tier"
+        ],
+        "offers": [
+          "Invented cake design consultation"
+        ],
+        "urls": [
+          "https://example.test/sweet-world-reference",
+          "/invented-wedding-cakes"
+        ]
+      },
+      "direction_id": "wedding-cakes",
+      "direction_version": 1,
+      "evaluator_rubric": {
+        "factual_support": 15,
+        "human_editorial_score": 15,
+        "internal_links": 5,
+        "keyword_naturalness": 10,
+        "keyword_overuse": 10,
+        "language_locale_compliance": 10,
+        "meta_schema": 5,
+        "required_section_coverage": 15,
+        "source_traceability": 15
+      },
+      "expected_required_sections": [
+        "Design options",
+        "Tasting",
+        "Ordering timeline"
+      ],
+      "prohibited_claims": [
+        "Guaranteed identical handmade decorations",
+        "Exact color match guaranteed"
+      ],
+      "prompt_set_version": 1,
+      "results": {
+        "source_path": {
+          "cross_company_contamination_occurrences": null,
+          "deviation": "G4 absent: provider/paid source execution is prohibited.",
+          "metrics": {
+            "factual_support": null,
+            "human_editorial_score": null,
+            "internal_links": null,
+            "keyword_naturalness": null,
+            "keyword_overuse": null,
+            "language_locale_compliance": null,
+            "meta_schema": null,
+            "required_section_coverage": null,
+            "source_traceability": null
+          },
+          "paid_call_count": 0,
+          "prohibited_claim_occurrences": null,
+          "retry_count": 0,
+          "runtime_ms": null,
+          "status": "not_run"
+        },
+        "universal_path": {
+          "cross_company_contamination_occurrences": null,
+          "deviation": "Universal n8n path remains literal-false/local-only and Cloud execution is unverified.",
+          "metrics": {
+            "factual_support": null,
+            "human_editorial_score": null,
+            "internal_links": null,
+            "keyword_naturalness": null,
+            "keyword_overuse": null,
+            "language_locale_compliance": null,
+            "meta_schema": null,
+            "required_section_coverage": null,
+            "source_traceability": null
+          },
+          "paid_call_count": 0,
+          "prohibited_claim_occurrences": null,
+          "retry_count": 0,
+          "runtime_ms": null,
+          "status": "not_run"
+        }
+      },
+      "snapshot_hash": "45eb663e58dc0b885a97f8ff45f5e24175a188405d7fd608031ac31213552bcb",
+      "unique_contamination_markers": [
+        "marker-saffron-tier"
+      ]
+    },
+    {
+      "audience_segment_id": "vladeltsy-avto",
+      "audience_version": 1,
+      "brief_id": "brief-automotive-ru",
+      "case_id": "automotive-ru",
+      "category": "different_locale_language",
+      "company_id": "ru-paint-lab",
+      "company_profile_version": 1,
+      "compiled_context": {
+        "audience": {
+          "audience_segment_id": "vladeltsy-avto",
+          "audience_version": 1,
+          "budget_range": "Средний локальный ремонт после диагностики; точная сумма только в смете",
+          "buyer_roles": [
+            "Владелец автомобиля"
+          ],
+          "company_id": "ru-paint-lab",
+          "company_or_customer_size": "Один владелец и один автомобиль в заявке",
+          "created_at": "2026-08-14T12:00:00Z",
+          "decision_cycle": "От одного до трёх дней после очного осмотра",
+          "decision_participants": [
+            "Владелец",
+            "При необходимости второй пользователь автомобиля"
+          ],
+          "direction_id": "lokalnaya-okraska",
+          "direction_version": 1,
+          "geography": "Вымышленный район Северная Набережная и соседние кварталы",
+          "industry": "Частные владельцы легковых автомобилей",
+          "jobs_to_be_done": [
+            "Понять объём повреждения",
+            "Сравнить ремонт участка и окраску всей детали",
+            "Получить прозрачную смету"
+          ],
+          "minimum_expectations": [
+            "Чистая зона ремонта",
+            "Согласованный срок",
+            "Финальный совместный осмотр"
+          ],
+          "name": "Владельцы автомобилей",
+          "objection_responses": [
+            "Смета меняется только после нового подтверждения",
+            "Пробный выкрас оценивается до основной окраски"
+          ],
+          "objections": [
+            "Цена изменится после начала",
+            "Переход оттенка будет заметен"
+          ],
+          "pains_and_risks": [
+            "Скрытое увеличение цены",
+            "Расширение зоны ремонта без согласования",
+            "Необоснованное обещание точного совпадения"
+          ],
+          "preferred_content_formats": [
+            "Краткая страница услуги",
+            "Чек-лист этапов",
+            "Ответы на частые вопросы"
+          ],
+          "purchase_triggers": [
+            "Свежая царапина",
+            "Подготовка автомобиля к продаже",
+            "Необходимость остановить развитие дефекта"
+          ],
+          "selection_criteria": [
+            "Понятный состав работ",
+            "Фото этапов",
+            "Порядок согласования изменений"
+          ],
+          "updated_at": "2026-08-14T12:00:00Z"
+        },
+        "brief": {
+          "audience_segment_id": "vladeltsy-avto",
+          "audience_version": 1,
+          "brief_id": "brief-automotive-ru",
+          "company_id": "ru-paint-lab",
+          "company_profile_version": 1,
+          "competitor_urls": [
+            "https://ru-reference-a.example.test/usluga",
+            "https://ru-reference-b.example.test/process"
+          ],
+          "created_at": "2026-08-20T20:01:47.176121Z",
+          "created_by": "local-e2e-actor",
+          "current_page_context": "Новая вымышленная русскоязычная страница marker-ruby-panel без исходного текста; факты берутся только из замороженных карточек.",
+          "current_page_url": null,
+          "direction_id": "lokalnaya-okraska",
+          "direction_version": 1,
+          "goal": "Объяснить владельцу автомобиля процесс локальной окраски, ограничения дистанционной оценки и порядок согласования сметы.",
+          "keywords": [
+            "локальная окраска автомобиля",
+            "ремонт царапины",
+            "подбор оттенка"
+          ],
+          "locale": "ru-RU",
+          "lsi_terms": [
+            "карта дефекта",
+            "пробный выкрас",
+            "согласование сметы",
+            "зона ремонта",
+            "финальный осмотр"
+          ],
+          "output_sheet_target": null,
+          "page_structure": [
+            "Описание услуги",
+            "Подготовка",
+            "Расчёт стоимости"
+          ],
+          "page_type": "service-page",
+          "primary_keyword": "локальная окраска автомобиля",
+          "target_language": "ru",
+          "updated_at": "2026-08-20T20:01:47.183203Z"
+        },
+        "company": {
+          "allowed_claims": [
+            "Состав работ фиксируется в смете",
+            "Дополнительные работы требуют нового согласования"
+          ],
+          "brand_summary": "Учебная малярная студия marker-ruby-panel выполняет локальное восстановление покрытия на вымышленных тестовых автомобилях.",
+          "case_references": [
+            "Вымышленный кейс: локальный ремонт двери учебного седана без изменения согласованной зоны"
+          ],
+          "certifications": [
+            "Вымышленное внутреннее обучение безопасной работе с материалами"
+          ],
+          "commercial_model": "Фиксированная смета на согласованный участок после очного осмотра.",
+          "company_id": "ru-paint-lab",
+          "company_profile_id": "ru-paint-lab-profile",
+          "company_profile_version": 1,
+          "compliance_requirements": [
+            "Не заявлять заводское совпадение без инструментальной проверки",
+            "Не скрывать обнаруженные дополнительные повреждения"
+          ],
+          "created_at": "2026-08-20T20:01:47.160698Z",
+          "default_language": "ru",
+          "default_locale": "ru-RU",
+          "forbidden_claims": [
+            "Гарантированно идеальный результат",
+            "Точное совпадение без осмотра"
+          ],
+          "name": "Учебная студия окраски",
+          "negative_voice_examples": [
+            "Сделаем идеально и навсегда без осмотра."
+          ],
+          "positive_voice_examples": [
+            "После осмотра покажем границы ремонта и объясним, какие этапы влияют на срок."
+          ],
+          "pricing_overview": "Вымышленная цена зависит от площади, геометрии детали и объёма подготовки; дистанционная точная цена не обещается.",
+          "products_services_overview": "Диагностика повреждения, подбор учебного оттенка, подготовка участка, окраска и контроль результата.",
+          "proof_points": [
+            "Вымышленный журнал контроля толщины покрытия",
+            "Вымышленная карта подбора оттенка для каждого заказа"
+          ],
+          "reading_level": "Понятно неспециалисту; технические термины объясняются при первом употреблении.",
+          "service_geography": "Вымышленный район Северная Набережная, очный приём только в учебной мастерской.",
+          "tone_of_voice": "Спокойный, предметный и понятный владельцу автомобиля русский язык без рекламных гарантий.",
+          "tools_and_process": [
+            "Измерение покрытия",
+            "Пробный выкрас",
+            "Фотофиксация подготовки",
+            "Финальный осмотр при рассеянном свете"
+          ],
+          "updated_at": "2026-08-20T20:01:47.160698Z",
+          "value_propositions": [
+            "Письменный план работ до начала",
+            "Фотофиксация этапов",
+            "Отдельное согласование дополнительных дефектов"
+          ]
+        },
+        "direction": {
+          "allowed_claims": [
+            "Осмотр проводится до утверждения сметы",
+            "Результат принимается по согласованному чек-листу"
+          ],
+          "category_context": "Локальная окраска отдельного повреждённого участка с ограничением зоны ремонта после очной диагностики.",
+          "company_id": "ru-paint-lab",
+          "company_profile_version": 1,
+          "created_at": "2026-08-14T12:00:00Z",
+          "default_language": "ru",
+          "default_locale": "ru-RU",
+          "default_page_structure": [
+            "Описание услуги",
+            "Подготовка",
+            "Расчёт стоимости"
+          ],
+          "direction_cases": [
+            "Вымышленный кейс: устранение поверхностной царапины на переднем крыле учебного хэтчбека"
+          ],
+          "direction_id": "lokalnaya-okraska",
+          "direction_proof_points": [
+            "Вымышленная карта дефекта",
+            "Вымышленный протокол пробного выкраса"
+          ],
+          "direction_value_propositions": [
+            "Границы ремонта показываются до работ",
+            "Изменение сметы требует подтверждения клиента"
+          ],
+          "direction_version": 1,
+          "forbidden_claims": [
+            "Гарантированно идеальный результат",
+            "Точное совпадение без осмотра"
+          ],
+          "internal_link_catalog": [
+            "https://ru-paint-lab.example.test/diagnostika",
+            "https://ru-paint-lab.example.test/podgotovka"
+          ],
+          "name": "Локальная окраска",
+          "offerings": [
+            "Осмотр и карта дефекта",
+            "Подготовка ограниченного участка",
+            "Пробный подбор учебного оттенка",
+            "Локальная окраска и контроль"
+          ],
+          "prices_and_tariffs": "Расчёт предоставляется после осмотра; тестовый диапазон не является публичной офертой.",
+          "updated_at": "2026-08-14T12:00:00Z"
+        },
+        "prompt_set_version": 1,
+        "schema_version": 1
+      },
+      "contamination_tokens": {
+        "case_references": [
+          "Вымышленный кейс: локальный ремонт двери учебного седана без изменения согласованной зоны",
+          "Вымышленный кейс: устранение поверхностной царапины на переднем крыле учебного хэтчбека"
+        ],
+        "geographies": [
+          "Вымышленный район Северная Набережная, очный приём только в учебной мастерской.",
+          "Вымышленный район Северная Набережная и соседние кварталы"
+        ],
+        "identities": [
+          "ru-paint-lab",
+          "Учебная студия окраски",
+          "lokalnaya-okraska",
+          "Локальная окраска",
+          "vladeltsy-avto",
+          "Владельцы автомобилей"
+        ],
+        "markers": [
+          "marker-ruby-panel"
+        ],
+        "offers": [
+          "Осмотр и карта дефекта",
+          "Подготовка ограниченного участка",
+          "Пробный подбор учебного оттенка",
+          "Локальная окраска и контроль"
+        ],
+        "urls": [
+          "https://ru-reference-a.example.test/usluga",
+          "https://ru-reference-b.example.test/process",
+          "https://ru-paint-lab.example.test/diagnostika",
+          "https://ru-paint-lab.example.test/podgotovka"
+        ]
+      },
+      "direction_id": "lokalnaya-okraska",
+      "direction_version": 1,
+      "evaluator_rubric": {
+        "factual_support": 15,
+        "human_editorial_score": 15,
+        "internal_links": 5,
+        "keyword_naturalness": 10,
+        "keyword_overuse": 10,
+        "language_locale_compliance": 10,
+        "meta_schema": 5,
+        "required_section_coverage": 15,
+        "source_traceability": 15
+      },
+      "expected_required_sections": [
+        "Описание услуги",
+        "Подготовка",
+        "Расчёт стоимости"
+      ],
+      "prohibited_claims": [
+        "Гарантированно идеальный результат",
+        "Точное совпадение без осмотра"
+      ],
+      "prompt_set_version": 1,
+      "results": {
+        "source_path": {
+          "cross_company_contamination_occurrences": null,
+          "deviation": "G4 absent: provider/paid source execution is prohibited.",
+          "metrics": {
+            "factual_support": null,
+            "human_editorial_score": null,
+            "internal_links": null,
+            "keyword_naturalness": null,
+            "keyword_overuse": null,
+            "language_locale_compliance": null,
+            "meta_schema": null,
+            "required_section_coverage": null,
+            "source_traceability": null
+          },
+          "paid_call_count": 0,
+          "prohibited_claim_occurrences": null,
+          "retry_count": 0,
+          "runtime_ms": null,
+          "status": "not_run"
+        },
+        "universal_path": {
+          "cross_company_contamination_occurrences": null,
+          "deviation": "Universal n8n path remains literal-false/local-only and Cloud execution is unverified.",
+          "metrics": {
+            "factual_support": null,
+            "human_editorial_score": null,
+            "internal_links": null,
+            "keyword_naturalness": null,
+            "keyword_overuse": null,
+            "language_locale_compliance": null,
+            "meta_schema": null,
+            "required_section_coverage": null,
+            "source_traceability": null
+          },
+          "paid_call_count": 0,
+          "prohibited_claim_occurrences": null,
+          "retry_count": 0,
+          "runtime_ms": null,
+          "status": "not_run"
+        }
+      },
+      "snapshot_hash": "5ba4801eadfcd07f814b594d1720fcf6d9f1e5ff1e8f2dfe6a9f43b6becd3c57",
+      "unique_contamination_markers": [
+        "marker-ruby-panel"
+      ]
+    }
+  ],
+  "evaluation_contract": {
+    "acceptance_thresholds": {
+      "both_paths_must_be_complete": true,
+      "cross_company_contamination_occurrences_maximum": 0,
+      "factual_support_minimum": 90,
+      "human_editorial_score_minimum": 80,
+      "language_locale_compliance_minimum": 90,
+      "prohibited_claim_occurrences_maximum": 0,
+      "required_section_coverage_minimum": 100,
+      "source_traceability_minimum": 90,
+      "weighted_score_minimum": 80
+    },
+    "metric_definitions": {
+      "factual_support": {
+        "evaluator": "two-independent-human-reviewers",
+        "measurement": "Classify each externally checkable claim as supported or unsupported by the frozen snapshot.",
+        "scoring": "100 * supported_claims / externally_checkable_claims; 100 when no externally checkable claims"
+      },
+      "human_editorial_score": {
+        "evaluator": "two-independent-human-reviewers",
+        "measurement": "Blind reviewers rate clarity, usefulness, tone and publishability on a five-point anchored scale.",
+        "scoring": "25 * (mean_anchored_rating - 1)"
+      },
+      "internal_links": {
+        "evaluator": "deterministic-plus-human-confirmation",
+        "measurement": "Count applicable catalog links used with relevant anchor and destination.",
+        "scoring": "100 * appropriate_links / applicable_links; 100 when no links apply"
+      },
+      "keyword_naturalness": {
+        "evaluator": "two-independent-human-reviewers",
+        "measurement": "Blind reviewers score grammar and contextual fit on a five-point anchored scale.",
+        "scoring": "25 * (mean_anchored_rating - 1)"
+      },
+      "keyword_overuse": {
+        "evaluator": "deterministic-plus-human-confirmation",
+        "measurement": "Count keywords used outside a relevant sentence or repeated in adjacent sentences.",
+        "scoring": "max(0, 100 - 20 * unnatural_occurrences)"
+      },
+      "language_locale_compliance": {
+        "evaluator": "two-independent-human-reviewers",
+        "measurement": "Review target language, terminology, spelling, punctuation and locale-specific formatting against the frozen brief.",
+        "scoring": "100 - 20 * major_errors - 5 * minor_errors, floored at 0"
+      },
+      "meta_schema": {
+        "evaluator": "deterministic",
+        "measurement": "Validate required output schema, title and description constraints.",
+        "scoring": "100 * valid_required_fields / required_fields"
+      },
+      "required_section_coverage": {
+        "evaluator": "deterministic",
+        "measurement": "Count required sections with at least 80 non-whitespace characters divided by total required sections.",
+        "scoring": "100 * substantive_required_sections / total_required_sections"
+      },
+      "source_traceability": {
+        "evaluator": "two-independent-human-reviewers",
+        "measurement": "Count factual assertions linked to a frozen source record or snapshot field.",
+        "scoring": "100 * traceable_assertions / factual_assertions; 100 when no factual assertions"
+      }
+    },
+    "review_protocol": {
+      "approval_formula": "approve only when both paths are complete, no mandatory blocker exists, weighted score and every hard threshold pass, and prohibited-claim and contamination counts are zero",
+      "blind_to_execution_path": true,
+      "disagreement_rule": "A third reviewer adjudicates when metric scores differ by more than 20 points.",
+      "rating_anchors": {
+        "1": "unusable",
+        "2": "major rewrite",
+        "3": "substantial edit",
+        "4": "minor edit",
+        "5": "publishable"
+      },
+      "reviewer_count": 2,
+      "weighted_score_formula": "sum(metric_score * metric_weight) / 100"
+    },
+    "rubric_version": 1,
+    "scale": {
+      "maximum": 100,
+      "minimum": 0
+    }
+  },
+  "external_costs": {
+    "amount": 0,
+    "currency": null,
+    "paid_calls": 0
+  },
+  "frozen_at": "2026-08-20T19:25:00+00:00",
+  "integrity": {
+    "algorithm": "sha256",
+    "canonicalization": "seo_orchestrator.canonical.canonical_json UTF-8 over the top-level object with integrity omitted",
+    "sha256": "38f25e319bb7fed210dc529f9ef13597bf278c50218c529c9de1aa82ad6cf6d8"
+  },
+  "mandatory_release_blockers": [
+    {
+      "evidence": "Task 19 dual reviews deleg_9ee0e109 returned BLOCKED: actual OCI build/inspect and isolated container lifecycle were not executable.",
+      "id": "task19-oci-boundary"
+    },
+    {
+      "evidence": "Neither paid source path nor universal Cloud path may be executed without G4; required equivalent-output metrics are absent.",
+      "id": "equivalent-path-benchmark"
+    },
+    {
+      "evidence": "Task 17 deployment_state is LOCAL_MOCK_ONLY_NOT_CLOUD_VERIFIED and atomic Cloud uniqueness is unproven.",
+      "id": "universal-cloud-readiness"
+    }
+  ],
+  "mutations": {
+    "docker_volumes": false,
+    "google_sheets": false,
+    "n8n_cloud": false,
+    "production": false,
+    "systemd": false,
+    "telegram": false
+  },
+  "schema_version": 1,
+  "verdict": "REJECTED"
+}
