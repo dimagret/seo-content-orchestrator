@@ -234,6 +234,21 @@ class JobService:
         snapshot = self._snapshots.get_snapshot(self._company_id, record.snapshot_id)
         return _domain_job_with_snapshot(record, snapshot)
 
+    def running_execution_identity(
+        self, job_id: str
+    ) -> tuple[SeoJob, ExecutionSnapshot]:
+        """Return authoritative immutable inputs for terminal result validation."""
+        with transaction(self._conn):
+            record = self._jobs.get_job(self._company_id, job_id)
+            job = _domain_job(record)
+            if job.state is not JobState.RUNNING or record.superseded_by_job_id is not None:
+                raise StateConflict
+            _require_plan_integrity(record)
+            snapshot = self._snapshots.get_snapshot(self._company_id, record.snapshot_id)
+            _require_job_snapshot_integrity(record, snapshot)
+            self._paid_approval(record)
+            return _domain_job_with_snapshot(record, snapshot), snapshot
+
     def prepare_execution(self, job_id: str) -> tuple[SeoJob, ExecutionSnapshot]:
         """Revalidate one queued approval and immutable input before external I/O."""
         with transaction(self._conn):

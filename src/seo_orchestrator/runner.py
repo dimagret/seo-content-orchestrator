@@ -19,6 +19,7 @@ from seo_orchestrator.domain import JobState
 from seo_orchestrator.domain.approvals import ExecutionPlan
 from seo_orchestrator.errors import ApprovalInvalid, DataIntegrityError, StateConflict
 from seo_orchestrator.executors.base import (
+    AuthoritativeResultValidator,
     ExecutionStatus,
     Executor,
     ExecutorError,
@@ -298,11 +299,16 @@ class Runner:
         current_name = self._current_executor_name()
         current_models = getattr(self._executor, "model_ids", None)
         current_providers = getattr(self._executor, "provider_ids", None)
+        current_pipeline = getattr(self._executor, "pipeline_version", None)
         if (
             type(current_models) is not tuple
             or type(current_providers) is not tuple
             or any(type(value) is not str or not value for value in current_models)
             or any(type(value) is not str or not value for value in current_providers)
+            or (
+                current_pipeline is not None
+                and (type(current_pipeline) is not str or not current_pipeline)
+            )
         ):
             raise DataIntegrityError
         plan = service.execution_plan(job_id)
@@ -310,6 +316,7 @@ class Runner:
             plan.executor_name == current_name
             and plan.model_ids == current_models
             and plan.provider_ids == current_providers
+            and (current_pipeline is None or plan.pipeline_version == current_pipeline)
         )
 
     @staticmethod
@@ -1142,6 +1149,15 @@ class Runner:
                 plan = service.execution_plan(candidate.job_id)
                 if not self._result_usage_matches_plan(status.result, plan):
                     raise DataIntegrityError
+                if isinstance(self._executor, AuthoritativeResultValidator):
+                    trusted_job, trusted_snapshot = service.running_execution_identity(
+                        candidate.job_id
+                    )
+                    self._executor.validate_result(
+                        trusted_job,
+                        trusted_snapshot,
+                        status.result,
+                    )
                 result_json = execution_result_bytes(status.result)
                 result_hash = hashlib.sha256(result_json).hexdigest()
                 completion_at = observed_at.isoformat()

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from seo_orchestrator import cli
-from seo_orchestrator.executors.mock import MockExecutor
+from seo_orchestrator.executors.staged_mock import StagedMockExecutor
 from seo_orchestrator.settings import Settings
 
 
@@ -46,7 +46,7 @@ def test_worker_mock_selection_is_explicit_and_non_production_only(
     cli.main(["worker", "--mock"])
 
     assert len(observed) == 1
-    assert isinstance(observed[0], MockExecutor)
+    assert isinstance(observed[0], StagedMockExecutor)
     assert observed[0].durable_semantic_idempotency is True
 
 

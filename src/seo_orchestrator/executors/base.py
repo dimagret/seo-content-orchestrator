@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Protocol, cast
+from typing import Protocol, cast, runtime_checkable
 
 from seo_orchestrator.canonical import JsonValue, canonical_json
 from seo_orchestrator.domain import ExecutionSnapshot, SeoJob
@@ -194,6 +194,20 @@ class Executor(Protocol):
 
     def cancel(self, run: ExternalRun) -> ExecutionStatus:
         """Return only after provider-terminal CANCELED confirmation."""
+        ...
+
+
+@runtime_checkable
+class AuthoritativeResultValidator(Protocol):
+    """Optional adapter hook that rebinds a result to authoritative local inputs."""
+
+    def validate_result(
+        self,
+        job: SeoJob,
+        snapshot: ExecutionSnapshot,
+        result: ExecutionResult,
+    ) -> None:
+        """Raise when a terminal result is not exact for the trusted execution identity."""
         ...
 
 

@@ -22,7 +22,7 @@ from seo_orchestrator.api.auth import load_api_token, load_hmac_key
 from seo_orchestrator.db.connection import connect
 from seo_orchestrator.db.migrations import migrate
 from seo_orchestrator.executors.base import Executor
-from seo_orchestrator.executors.mock import MockExecutor
+from seo_orchestrator.executors.staged_mock import StagedMockExecutor
 from seo_orchestrator.runner import Runner
 from seo_orchestrator.services.artifacts import ArtifactStore
 from seo_orchestrator.settings import Settings
@@ -396,4 +396,4 @@ def main(argv: Sequence[str] | None = None) -> None:
     if settings.environment == "production":
         raise SystemExit("production executor is unavailable until Task 12")
     mock_state_path = settings.db_path.with_name(f"{settings.db_path.name}.mock-executor")
-    run_worker(settings, executor=MockExecutor(state_path=mock_state_path))
+    run_worker(settings, executor=StagedMockExecutor(state_path=mock_state_path))

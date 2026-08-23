@@ -16,7 +16,7 @@ from seo_orchestrator.api.app import create_app
 from seo_orchestrator.db.connection import connect, transaction
 from seo_orchestrator.db.migrations import migrate
 from seo_orchestrator.domain import JobState
-from seo_orchestrator.executors.base import ExecutionStatus, ExternalStatus
+from seo_orchestrator.executors.base import ExecutionStatus, Executor, ExternalStatus
 from seo_orchestrator.executors.mock import MockExecutor
 from seo_orchestrator.runner import Runner
 from seo_orchestrator.services.artifacts import ArtifactStore, ExecutionResult
@@ -234,6 +234,7 @@ def plan_flow(
     direction_version: int = 1,
     audience_version: int = 1,
     approve: bool = True,
+    pipeline_version: str = PIPELINE_VERSION,
 ) -> PlannedFlow:
     company_id = str(fixture["company_id"])
     direction = fixture["direction"]
@@ -291,7 +292,7 @@ def plan_flow(
             "company_id": company_id,
             "snapshot_id": snapshot.snapshot_id,
             "execution_plan": {
-                "pipeline_version": PIPELINE_VERSION,
+                "pipeline_version": pipeline_version,
                 "executor_name": "mock",
                 "model_ids": ["writer-model-v1"],
                 "provider_ids": ["mock-provider"],
@@ -391,7 +392,7 @@ def succeeded_status(run_number: int, result: ExecutionResult) -> ExecutionStatu
 
 def make_runner(
     settings: Settings,
-    executor: MockExecutor,
+    executor: Executor,
     *,
     runner_id: str,
     lease_token: str,
