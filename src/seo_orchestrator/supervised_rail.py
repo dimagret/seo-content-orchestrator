@@ -9,7 +9,7 @@ import os
 import sqlite3
 import stat
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 from typing import NoReturn, cast
@@ -32,6 +32,7 @@ _MAX_STAGE_LIST_ITEMS = 128
 _MAX_STAGE_COMPACT_TEXT_BYTES = 4096
 _MAX_STAGE_CONTENT_BYTES = 1_048_576
 _INTEGRITY_KEY_BYTES = 32
+_ATTESTATION_FUTURE_SLACK = timedelta(seconds=60)
 _REVISION_FIELDS = frozenset({"content_markdown", "titles", "descriptions", "sources", "warnings"})
 _STAGE_SCHEMAS: dict[str, JsonValue] = {
     "outline": {"sections": ["non-empty string"]},
@@ -1771,6 +1772,8 @@ class SupervisedRail:
             if current_status is not SupervisedStatus.AWAITING_OPERATOR_EXECUTION:
                 raise ValueError(f"supervised run is {current_status.value}")
             packet = _packet_from_value(json.loads(cast(str, row[1])))
+            if completion.attestation.observed_at > datetime.now(UTC) + _ATTESTATION_FUTURE_SLACK:
+                raise ValueError("completion attestation observed_at must not be in the future")
             _append_event(
                 connection,
                 company_id=packet.company_id,

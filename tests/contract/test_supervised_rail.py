@@ -7,7 +7,7 @@ import os
 import sqlite3
 import stat
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import cast
 
@@ -1527,3 +1527,79 @@ def test_request_cancel_is_rejected_after_artifact_frozen(
             (job.company_id, job.job_id),
         ).fetchall()
     assert events == []
+# helpers for attestation drift hardening
+
+
+def _completion_custom_attestation(
+    packet: StagePacket,
+    *,
+    operator_id: str,
+    observed_at: datetime,
+) -> ObservedCompletion:
+    return ObservedCompletion(
+        job_id=packet.job_id,
+        company_id=packet.company_id,
+        stage_id=packet.stage_id,
+        input_hash=packet.input_hash,
+        payload=_valid_stage_payload(packet.stage_id),
+        attestation=OperatorAttestation(
+            session_ref="session-1",
+            provider_id="openai-codex",
+            model_id="gpt-5.6-terra",
+            operator_id=operator_id,
+            observed_at=observed_at,
+        ),
+    )
+
+
+def test_bind_completion_rejects_empty_operator_id(
+    tmp_path: Path,
+) -> None:
+    snapshot = _snapshot()
+    job = _job(snapshot)
+    state_path = tmp_path / "rail.sqlite"
+    rail = SupervisedRail(state_path=state_path)
+    packet = rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+
+    with pytest.raises(ValueError, match="operator_id"):
+        _completion_custom_attestation(packet, operator_id=" ", observed_at=NOW)
+
+    valid_candidate = _completion_custom_attestation(
+        packet, operator_id="operator-1", observed_at=NOW
+    )
+    rail.bind_completion(valid_candidate)
+
+    reopened = SupervisedRail(state_path=state_path)
+    with sqlite3.connect(state_path) as connection:
+        rows = connection.execute(
+            "SELECT COUNT(*) FROM supervised_completions "
+            "WHERE company_id=? AND job_id=? AND input_hash=?",
+            (job.company_id, job.job_id, packet.input_hash),
+        ).fetchone()
+    assert rows == (1,)
+    assert reopened.status(company_id=job.company_id, job_id=job.job_id) is SupervisedStatus.AWAITING_OPERATOR_EXECUTION
+
+
+def test_bind_completion_rejects_future_observed_at(
+    tmp_path: Path,
+) -> None:
+    snapshot = _snapshot()
+    job = _job(snapshot)
+    state_path = tmp_path / "rail.sqlite"
+    rail = SupervisedRail(state_path=state_path)
+    packet = rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+
+    future_attestation = datetime.now(UTC) + timedelta(days=1)
+    candidate = _completion_custom_attestation(
+        packet, operator_id="operator-1", observed_at=future_attestation
+    )
+    with pytest.raises(ValueError, match="observed_at|attestation"):
+        rail.bind_completion(candidate)
+
+    with sqlite3.connect(state_path) as connection:
+        rows = connection.execute(
+            "SELECT COUNT(*) FROM supervised_completions "
+            "WHERE company_id=? AND job_id=? AND input_hash=?",
+            (job.company_id, job.job_id, packet.input_hash),
+        ).fetchone()
+    assert rows == (0,)
