@@ -13,10 +13,12 @@ from typing import Any
 import httpx
 
 from seo_orchestrator.api.app import create_app
+from seo_orchestrator.canonical import sha256_fingerprint
 from seo_orchestrator.db.connection import connect, transaction
 from seo_orchestrator.db.migrations import migrate
-from seo_orchestrator.domain import JobState
-from seo_orchestrator.executors.base import ExecutionStatus, ExternalStatus
+from seo_orchestrator.db.repositories import SnapshotRepository
+from seo_orchestrator.domain import ExecutionSnapshot, JobState
+from seo_orchestrator.executors.base import ExecutionStatus, Executor, ExternalStatus
 from seo_orchestrator.executors.mock import MockExecutor
 from seo_orchestrator.runner import Runner
 from seo_orchestrator.services.artifacts import ArtifactStore, ExecutionResult
@@ -74,6 +76,7 @@ class MutationGuardExecutor(MockExecutor):
             run_id_factory=lambda number: f"local-run-{number}",
             state_path=state_path,
         )
+
     def configure_durable_state(self, state_path: Path) -> None:
         self.configuration_call_count += 1
         super().configure_durable_state(state_path)
@@ -140,9 +143,7 @@ def api_request(
     params: dict[str, str] | None = None,
     expected_status: int = 200,
 ) -> httpx.Response:
-    response = asyncio.run(
-        _request_async(app, method, path, json_body=json_body, params=params)
-    )
+    response = asyncio.run(_request_async(app, method, path, json_body=json_body, params=params))
     assert response.status_code == expected_status, response.text
     return response
 
@@ -234,6 +235,12 @@ def plan_flow(
     direction_version: int = 1,
     audience_version: int = 1,
     approve: bool = True,
+    pipeline_version: str = PIPELINE_VERSION,
+    executor_name: str = "mock",
+    model_ids: tuple[str, ...] = ("writer-model-v1",),
+    provider_ids: tuple[str, ...] = ("mock-provider",),
+    maximum_retries: int = 1,
+    evidence_sources: tuple[dict[str, Any], ...] = (),
 ) -> PlannedFlow:
     company_id = str(fixture["company_id"])
     direction = fixture["direction"]
@@ -281,6 +288,20 @@ def plan_flow(
                 brief_id,
                 prompt_set_version=1,
             )
+            if evidence_sources:
+                context = snapshot.thawed_compiled_context()
+                if type(context) is not dict:
+                    raise AssertionError("fixture snapshot context must be an object")
+                context["evidence"] = {"sources": [dict(source) for source in evidence_sources]}
+                snapshot = ExecutionSnapshot.model_validate(
+                    {
+                        **snapshot.model_dump(mode="python"),
+                        "snapshot_id": f"{snapshot.snapshot_id}-evidence",
+                        "compiled_context": context,
+                        "snapshot_hash": sha256_fingerprint(context),
+                    }
+                )
+                SnapshotRepository(connection).add_snapshot(snapshot)
     finally:
         connection.close()
     planned = api_request(
@@ -291,11 +312,11 @@ def plan_flow(
             "company_id": company_id,
             "snapshot_id": snapshot.snapshot_id,
             "execution_plan": {
-                "pipeline_version": PIPELINE_VERSION,
-                "executor_name": "mock",
-                "model_ids": ["writer-model-v1"],
-                "provider_ids": ["mock-provider"],
-                "maximum_retries": 1,
+                "pipeline_version": pipeline_version,
+                "executor_name": executor_name,
+                "model_ids": list(model_ids),
+                "provider_ids": list(provider_ids),
+                "maximum_retries": maximum_retries,
                 "cost_currency": None,
                 "cost_min_decimal": None,
                 "cost_max_decimal": None,
@@ -349,9 +370,7 @@ def execution_result(company_id: str, keyword: str) -> ExecutionResult:
     return ExecutionResult(
         content_markdown=content,
         titles=tuple(f"{title_base} {index}" for index in range(1, 6)),  # type: ignore[arg-type]
-        descriptions=tuple(
-            f"{description_base} {index}." for index in range(1, 6)
-        ),  # type: ignore[arg-type]
+        descriptions=tuple(f"{description_base} {index}." for index in range(1, 6)),  # type: ignore[arg-type]
         keyword_qa={"primary_keyword": keyword, "occurrences": 1, "passed": True},
         text_metrics={"characters": len(content), "words": len(content.split())},
         sources=(
@@ -391,7 +410,7 @@ def succeeded_status(run_number: int, result: ExecutionResult) -> ExecutionStatu
 
 def make_runner(
     settings: Settings,
-    executor: MockExecutor,
+    executor: Executor,
     *,
     runner_id: str,
     lease_token: str,
