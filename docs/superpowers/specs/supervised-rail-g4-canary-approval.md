@@ -1,11 +1,11 @@
 # G4 canary approval artifact — «АвтоМаляр» supervised rail
 
-> Это approval-артефакт для первого реального supervised-stage run. Frozen inputs получены **read-only** из авторитативной БД `worker.db` (Task 21 mock-прогон, `job-a840a703682a4a6e9ec43a7297302952`). Owner-decision поля заполнены **default значениями**, ожидающими явного `APPROVED G4 canary` от владельца. Без model call, без изменения БД, без публикации.
+> Это approval-артефакт для первого реального supervised-stage run. Frozen inputs получены **read-only** из авторитативной БД `worker.db` (Task 21 mock-прогон, `job-a840a703682a4a6e9ec43a7297302952`). Owner-decision поля заполнены default значениями; **owner-decision recorded 2026-08-30 (`dimagret`)**: точная фраза `APPROVED G4 canary` проставлена в разделе 11 и применяется ровно к одному operator-attested canary run со значениями разделов 1–6.
 
 ## 0. Approval block
 
 ```text
-G4 canary:                          PENDING OWNER REVIEW (default values pre-filled, owner approval pending)
+G4 canary:                          APPROVED G4 canary — owner-attested for one canary run (2026-08-30, dimagret)
 Company:                             АвтоМаляр / avtomalyar-real-context
 Job:                                  job-a840a703682a4a6e9ec43a7297302952
 Snapshot:                             snapshot-393359ff2ffc4f59b5c274ac45045c07
@@ -196,13 +196,13 @@ Canary считается успешным, **только если** выпол
 ```text
 APPROVED G4 canary — финальная фраза владельца (точно):
 
-[                                  ]   ← pending; do not type APPROVED without an explicit gate signal
+APPROVED G4 canary                 ← exact owner-attested phrase, single-use, 2026-08-30
 
 Подпись: dimagret
-Дата:    2026-08-23
+Дата:    2026-08-30
 ```
 
-Без точной фразы `APPROVED G4 canary` от владельца canary запрещён. Default values are owner-attested but NOT operator-approved until the phrase is typed.
+`APPROVED G4 canary` — это **точная фраза владельца**, зафиксированная в публичном commit-е. Без неё canary был запрещён. Этот commit применяет её ровно к одному operator-attested canary run со значениями, перечисленными в разделах 1–6. После canary любая повторная попытка требует свежей фразы и нового owner-decision.
 
 ---
 
@@ -212,3 +212,15 @@ APPROVED G4 canary — финальная фраза владельца (точ�
 - Approval artifact записан в worktree `feat/task-23-supervised-subscription-rail`, без commit и push.
 - Default values зафиксированы 2026-08-30 оператором (`dimagret-canary-2026-08-23`) как starter set; их можно переопределить до фактического `APPROVED G4 canary`.
 - Любая правка frozen brief или allowlist требует нового owner-decision gate.
+
+## Boundary re-statement
+
+After the owner-decision commit:
+
+- `seo-orchestrator supervised-packet` and `seo-orchestrator supervised-bind` are authorised to be invoked by the operator (`dimagret-canary-2026-08-23`) against `avtomalyar-real-context / job-a840a703682a4a6e9ec43a7297302952`;
+- `SupervisedSubscriptionFinalizer.finalize` is authorised to write the immutable artifact under the configured `artifact_root` and transition `JobService` `RUNNING → SUCCEEDED`;
+- no publication, Telegram, Sheets, n8n, or deployment is authorised;
+- no extraction of OAuth, credentials, or API keys is authorised;
+- no unattended durable provider executor is authorised.
+
+If the operator runs more than the documented four stages (`outline → draft → critic → revision`) or exceeds `expected_token_ceiling` / `expected_dollar_ceiling`, this approval is exhausted and a new gate is required.
