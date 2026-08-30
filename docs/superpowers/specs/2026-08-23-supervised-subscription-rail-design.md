@@ -83,6 +83,172 @@ No state transition sends a provider request.
 
 `CANCEL_REQUESTED` prevents new packets. Because the consumer transport has no proven upstream cancel semantics, a session-level stop is recorded only as an operator observation. The job is never marked as a successful cancellation of upstream work.
 
+## Split between supervised rail and JobService state machine
+
+There are two independent state machines. Each owns its own states, transitions, and audit trail. They share only the final, audited transition from `RUNNING` to `SUCCEEDED` (and the artifact binding it triggers). Confusing the two is the most likely source of unsafe behaviour, so this section is explicit.
+
+### JobService state machine (authoritative for the SEO job)
+
+```text
+DRAFT → VALIDATED → PLANNED → AWAITING_PAID_APPROVAL → QUEUED → RUNNING
+                                                   ↘ FAILED_RETRYABLE → QUEUED
+                                                                    ↘ FAILED_FINAL
+        RUNNING → SUCCEEDED → AWAITING_EXPORT_APPROVAL → EXPORTED
+        QUEUED  → CANCELED
+        RUNNING → CANCELED
+```
+
+Owner: `JobService.transition(...)` with a scoped SQLite write under
+`transaction(self._conn)`. Allowed edges live in
+`seo_orchestrator.domain.jobs.ALLOWED_TRANSITIONS`. Every transition is
+recorded in the immutable `job_transitions` audit log with `from_state`,
+`to_state`, `occurred_at`, and `reason_summary`.
+
+What this state machine asserts:
+
+- payment/approval window integrity (`approved_plan_fingerprint`,
+  `approval_record_id`);
+- artifact manifest path can only be bound once to a `SUCCEEDED` job;
+- `CANCELED` is a one-way trip; nothing resumes from it.
+
+What it does NOT assert:
+
+- which executor ran the job (no executor identity in the state itself);
+- that any provider request was actually accepted by an upstream system.
+
+### Supervised rail state machine (authoritative for the local operator session)
+
+```text
+PACKET_READY → AWAITING_OPERATOR_EXECUTION
+                                    ↘ COMPLETION_SUBMITTED → ACCEPTED
+                                                          ↘ REJECTED
+                ACCEPTED → next PACKET_READY (or FINAL_QA_READY after revision)
+                FINAL_QA_READY → ARTIFACT_FROZEN (after immutable artifact write)
+
+anytime → OPERATOR_RECOVERY_REQUIRED (operator decision)
+anytime → CANCEL_REQUESTED (only from AWAITING_OPERATOR_EXECUTION
+                            or OPERATOR_RECOVERY_REQUIRED)
+```
+
+Owner: `SupervisedRail.bind_completion`,
+`mark_operator_recovery_required`, `request_cancel`,
+`resolve_recovery_for_exact_binding`, `record_artifact`. Every status-sensitive
+read verifies the complete HMAC-chained per-job event authority before returning
+a projection (see Implementation hardening addendum).
+
+What this state machine asserts:
+
+- one immutable packet per `(company_id, job_id, stage_id, sequence)`;
+- the operator binding identity matches the frozen binding
+  (`company_id`, `job_id`, `approval_record_id`, `approved_plan_fingerprint`,
+  `snapshot_hash`);
+- `input_hash` of the bound completion equals `input_hash` of the outstanding
+  packet;
+- revision QA passed before `FINAL_QA_READY`;
+- one immutable artifact path/hash, recorded exactly once.
+
+What it does NOT assert:
+
+- that any provider request actually happened (no provider/Hermes state);
+- that an upstream consumer cancel succeeded (`CANCEL_REQUESTED` is local
+  only).
+
+### Who owns each transition
+
+Supervised rail writes to its own ledger only. JobService writes to its own
+`jobs` / `job_transitions` only. There are exactly two crossings:
+
+1. **`QUEUED → RUNNING`** happens inside `prepare_supervised_packet` when the
+   operator asks for the very first packet and the rail validates the approved
+   supervised execution plan. This is the only place where supervised rail
+   initiates a JobService transition.
+2. **`RUNNING → SUCCEEDED`** happens inside `SupervisedSubscriptionFinalizer.finalize`,
+   only after:
+   - the rail is in `FINAL_QA_READY`;
+   - the deterministic revision QA passed locally;
+   - the immutable artifact was written through `ArtifactStore.write_bundle`;
+   - `JobService.bind_artifact_manifest` returned a non-null path.
+   This is the only place where supervised rail finalizes a JobService state.
+
+Every other JobService transition (`AWAITING_PAID_APPROVAL → QUEUED`,
+`SUCCEEDED → AWAITING_EXPORT_APPROVAL`, `QUEUED → CANCELED`,
+`RUNNING → CANCELED`, `FAILED_RETRYABLE → QUEUED`, etc.) is owned by other
+components and is not reachable from supervised rail.
+
+### What `OPERATOR_RECOVERY_REQUIRED` means relative to JobService
+
+`OPERATOR_RECOVERY_REQUIRED` is a **rail-only** state. It does not touch the
+JobService state machine. The job stays in `RUNNING` (or whatever state it was
+in before the rail entered recovery) and remains resumable through supervised
+rail. There is no automatic `FAILED_RETRYABLE` or `CANCELED` transition. A
+second supervised-bind is allowed only through
+`resolve_recovery_for_exact_binding(...)` for the same `input_hash` and only
+after the operator records a `RECOVERY_RESOLVED_FOR_EXACT_BINDING` event with
+matching identity.
+
+### What `CANCEL_REQUESTED` means relative to JobService
+
+`CANCEL_REQUESTED` is **also rail-only**. It does NOT transition the job to
+`JobState.CANCELED`. Doing so would claim an upstream cancellation that the
+consumer Codex transport does not prove. To actually cancel the JobService
+state, the operator must perform a **separate, explicit** `JobService.cancel_job`
+call with the `expected_state` matching the current state, and that call must
+be authorised by a separate owner-decision gate (not part of G4).
+
+The rail's `CANCEL_REQUESTED` is therefore a precondition, not a substitute.
+The audit record carries `local_request_only=true` and
+`upstream_cancellation=false` to make the distinction explicit in the ledger.
+
+### What `ARTIFACT_FROZEN` means relative to JobService
+
+`ARTIFACT_FROZEN` is reached inside `SupervisedSubscriptionFinalizer.finalize`
+**only after**:
+
+1. the JobService transition `RUNNING → SUCCEEDED` succeeded;
+2. `ArtifactStore.write_bundle` produced an immutable manifest;
+3. `JobService.bind_artifact_manifest` attached the manifest path to the job;
+4. `SupervisedRail.record_artifact` stored the verified manifest path and hash.
+
+If any of these steps fails, the rail stays in `FINAL_QA_READY` and the job
+stays in `RUNNING` (or whatever it was before finalize). A second finalize
+call must verify the same existing manifest and result, or fail closed; it
+must never overwrite the manifest or produce a second artifact.
+
+### Auditability
+
+Both state machines are independently auditable:
+
+- JobService audit: `job_transitions` table with `from_state`, `to_state`,
+  `occurred_at`, `reason_summary`. Every supervised rail crossing produces
+  one row.
+- Supervised rail audit: per-job event chain with HMAC, predecessor hash, and
+  immutable event head. Every status-sensitive read reconstructs and verifies
+  the chain before returning a projection.
+
+A reviewer can prove:
+
+1. The job only advanced from `QUEUED → RUNNING → SUCCEEDED` exactly once.
+2. No supervised `RUNNING → SUCCEEDED` happened without `FINAL_QA_READY` and
+   a verified immutable artifact.
+3. `CANCEL_REQUESTED` never implied `JobState.CANCELED`.
+4. `OPERATOR_RECOVERY_REQUIRED` never auto-retried and never implied
+   `FAILED_RETRYABLE`.
+
+### Consequences for future code
+
+- Do not add a `request_cancel` path that mutates the `JobService` state.
+  That is a separate owner gate.
+- Do not add a supervised-ledger status that implies a JobService transition.
+  If a future state appears that needs to imply one, design that as a separate
+  document with its own approval.
+- Any component that wants to cross the boundary must:
+  1. Verify that the supervised rail is in `FINAL_QA_READY` or
+     `ARTIFACT_FROZEN`.
+  2. Re-fetch the job via `JobService.get_job` to confirm `state`.
+  3. Perform the transition through `JobService.transition`, not directly.
+  4. Record the transition in the supervised rail event chain with
+     matching `job_state_before` and `job_state_after`.
+
 ## Quality controls
 
 1. Freeze the brief, approved plan, URL allowlist, and normalized evidence before `outline`.
