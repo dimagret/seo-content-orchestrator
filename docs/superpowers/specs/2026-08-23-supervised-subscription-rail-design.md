@@ -140,3 +140,24 @@ ledger. Its SHA-256 commitment is immutable ledger metadata. Missing, replaced, 
 permission-weakened, malformed, or mismatched key material fails closed. Therefore a direct
 SQL writer cannot authorize a recovery/cancel transition by appending a merely
 self-consistent event and editing `supervised_jobs.status`.
+
+## Cross-document scope
+
+This design covers only the supervised rail implementation. It does not cover:
+
+- the G4 owner-decision gate (see [`supervised-rail-g4-boundary.md`](./supervised-rail-g4-boundary.md));
+- the local operator workflow (see [`supervised-rail-operator-playbook.md`](./supervised-rail-operator-playbook.md));
+- the read-only Codex lifecycle evidence (see [`2026-08-23-codex-lifecycle-evidence.md`](./2026-08-23-codex-lifecycle-evidence.md));
+- the implementation plan with five TDD tasks (see [`../plans/2026-08-23-supervised-subscription-rail.md`](../plans/2026-08-23-supervised-subscription-rail.md));
+- the documentation index linking every artifact above (see [`supervised-rail-index.md`](./supervised-rail-index.md)).
+
+Any conflict between this design and the operator playbook, failure-states, G4 boundary, or lifecycle evidence must be resolved in favor of the more conservative document before any model stage.
+
+## Related documents in this worktree
+
+- Operator playbook: [`supervised-rail-operator-playbook.md`](./supervised-rail-operator-playbook.md) — the only path that uses the subscription.
+- Failure states: [`supervised-rail-failure-states.md`](./supervised-rail-failure-states.md) — local `OPERATOR_RECOVERY_REQUIRED` and `CANCEL_REQUESTED`.
+- G4 boundary: [`supervised-rail-g4-boundary.md`](./supervised-rail-g4-boundary.md) — owner-decision gates required before any model stage.
+- Documentation index: [`supervised-rail-index.md`](./supervised-rail-index.md) — cross-links design, plan, evidence, playbook, failure states, G4 boundary, and code.
+- Lifecycle evidence: [`2026-08-23-codex-lifecycle-evidence.md`](./2026-08-23-codex-lifecycle-evidence.md), source-body SHA-256 `b7c2b99e3c724fd1ffb413024b3e1a475f12d8e975fadc7fee5c51911242c5a4`.
+- Implementation plan: [`../plans/2026-08-23-supervised-subscription-rail.md`](../plans/2026-08-23-supervised-subscription-rail.md).
