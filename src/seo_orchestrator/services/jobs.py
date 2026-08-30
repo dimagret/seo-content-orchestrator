@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import sqlite3
+import stat
 import uuid
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import BinaryIO
 
 from seo_orchestrator.canonical import sha256_fingerprint
-from seo_orchestrator.db.connection import transaction
+from seo_orchestrator.db.connection import opened_database_identity, transaction
 from seo_orchestrator.db.repositories import (
     ApprovalRepository,
     JobRecord,
@@ -41,6 +44,41 @@ from seo_orchestrator.errors import (
 )
 from seo_orchestrator.services.artifacts import ArtifactStore
 
+
+def verified_authoritative_database_path(database_path: Path) -> Path:
+    """Resolve one owner-controlled, regular, single-link authoritative SQLite file."""
+    if not isinstance(database_path, Path):
+        raise TypeError("database_path must be a pathlib.Path")
+    if (
+        not database_path.is_absolute()
+        or any(part in {".", ".."} for part in database_path.parts)
+        or "\x00" in str(database_path)
+    ):
+        raise ValueError("authoritative database path must be absolute and normalized")
+    try:
+        original = os.lstat(database_path)
+        resolved = database_path.resolve(strict=True)
+        current = os.lstat(resolved)
+    except OSError as exc:
+        raise ValueError("authoritative database path is unavailable") from exc
+    if database_path != resolved:
+        raise ValueError("authoritative database path must not resolve through an alias")
+    if (
+        not stat.S_ISREG(original.st_mode)
+        or not stat.S_ISREG(current.st_mode)
+        or original.st_uid != os.getuid()
+        or current.st_uid != os.getuid()
+        or original.st_nlink != 1
+        or current.st_nlink != 1
+    ):
+        raise ValueError("authoritative database must be an owner-controlled single-link file")
+    if (original.st_dev, original.st_ino) != (current.st_dev, current.st_ino):
+        raise ValueError("authoritative database must not resolve through a symlink")
+    if not resolved.is_absolute() or not resolved.is_file():
+        raise ValueError("authoritative database must be one on-disk SQLite file")
+    return resolved
+
+
 _FINISHED_STATES = frozenset(
     {JobState.SUCCEEDED, JobState.FAILED_FINAL, JobState.CANCELED, JobState.EXPORTED}
 )
@@ -68,9 +106,7 @@ def _require_plan_integrity(record: JobRecord) -> ExecutionPlan:
     return plan
 
 
-def _require_job_snapshot_integrity(
-    record: JobRecord, snapshot: ExecutionSnapshot
-) -> None:
+def _require_job_snapshot_integrity(record: JobRecord, snapshot: ExecutionSnapshot) -> None:
     context = snapshot.thawed_compiled_context()
     brief = context.get("brief") if type(context) is dict else None
     if type(brief) is not dict:
@@ -125,9 +161,7 @@ def _domain_job(record: JobRecord) -> SeoJob:
             if (
                 type(hash_value) is not str
                 or len(hash_value) != 64
-                or any(
-                    character not in "0123456789abcdef" for character in hash_value
-                )
+                or any(character not in "0123456789abcdef" for character in hash_value)
             ):
                 raise DataIntegrityError
         for optional_value in (
@@ -138,26 +172,21 @@ def _domain_job(record: JobRecord) -> SeoJob:
         ):
             if optional_value is not None and type(optional_value) is not str:
                 raise DataIntegrityError
-        if (
-            record.approved_plan_fingerprint is not None
-            and (
-                type(record.approved_plan_fingerprint) is not str
-                or len(record.approved_plan_fingerprint) != 64
-                or any(
-                    character not in "0123456789abcdef"
-                    for character in record.approved_plan_fingerprint
-                )
+        if record.approved_plan_fingerprint is not None and (
+            type(record.approved_plan_fingerprint) is not str
+            or len(record.approved_plan_fingerprint) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in record.approved_plan_fingerprint
             )
         ):
             raise DataIntegrityError
         if record.approval_record_id is not None and (
-            type(record.approval_record_id) is not str
-            or not record.approval_record_id.strip()
+            type(record.approval_record_id) is not str or not record.approval_record_id.strip()
         ):
             raise DataIntegrityError
         if record.superseded_by_job_id is not None and (
-            type(record.superseded_by_job_id) is not str
-            or not record.superseded_by_job_id.strip()
+            type(record.superseded_by_job_id) is not str or not record.superseded_by_job_id.strip()
         ):
             raise DataIntegrityError
         if type(record.attempt) is not int or record.attempt < 1:
@@ -192,9 +221,7 @@ def _domain_job(record: JobRecord) -> SeoJob:
         raise DataIntegrityError from exc
 
 
-def _domain_job_with_snapshot(
-    record: JobRecord, snapshot: ExecutionSnapshot
-) -> SeoJob:
+def _domain_job_with_snapshot(record: JobRecord, snapshot: ExecutionSnapshot) -> SeoJob:
     _require_job_snapshot_integrity(record, snapshot)
     return replace(
         _domain_job(record),
@@ -228,15 +255,32 @@ class JobService:
             raise TypeError("artifact_store must be an ArtifactStore")
         self._artifact_store = artifact_store
 
+    @property
+    def database_path(self) -> Path:
+        """Return the resolved on-disk path of the authoritative main database."""
+        rows = self._conn.execute("PRAGMA database_list").fetchall()
+        main_paths = [row[2] for row in rows if len(row) >= 3 and row[1] == "main"]
+        if len(main_paths) != 1 or type(main_paths[0]) is not str or not main_paths[0]:
+            raise ValueError("authoritative database must be one on-disk SQLite file")
+        opened_identity = opened_database_identity(self._conn)
+        database_path = Path(main_paths[0])
+        verified_path = verified_authoritative_database_path(database_path)
+        current = os.lstat(verified_path)
+        if (
+            verified_path != opened_identity.path
+            or current.st_dev != opened_identity.device
+            or current.st_ino != opened_identity.inode
+        ):
+            raise ValueError("authoritative path does not match opened database identity")
+        return verified_path
+
     def get_job(self, job_id: str) -> SeoJob:
         """Return one scoped job only after its immutable snapshot verifies."""
         record = self._jobs.get_job(self._company_id, job_id)
         snapshot = self._snapshots.get_snapshot(self._company_id, record.snapshot_id)
         return _domain_job_with_snapshot(record, snapshot)
 
-    def running_execution_identity(
-        self, job_id: str
-    ) -> tuple[SeoJob, ExecutionSnapshot]:
+    def running_execution_identity(self, job_id: str) -> tuple[SeoJob, ExecutionSnapshot]:
         """Return authoritative immutable inputs for terminal result validation."""
         with transaction(self._conn):
             record = self._jobs.get_job(self._company_id, job_id)
@@ -261,15 +305,9 @@ class JobService:
             _require_job_snapshot_integrity(record, snapshot)
             approval = self._paid_approval(record)
             now = _clock_datetime(self._clock())
-            if (
-                approval.approved_at > now
-                or (
-                    approval.expires_at is not None
-                    and (
-                        approval.expires_at <= approval.approved_at
-                        or approval.expires_at <= now
-                    )
-                )
+            if approval.approved_at > now or (
+                approval.expires_at is not None
+                and (approval.expires_at <= approval.approved_at or approval.expires_at <= now)
             ):
                 raise ApprovalInvalid
             return _domain_job_with_snapshot(record, snapshot), snapshot
@@ -290,22 +328,14 @@ class JobService:
             _require_job_snapshot_integrity(record, snapshot)
             approval = self._paid_approval(record)
             now = _clock_datetime(self._clock())
-            if (
-                approval.approved_at > now
-                or (
-                    approval.expires_at is not None
-                    and (
-                        approval.expires_at <= approval.approved_at
-                        or approval.expires_at <= now
-                    )
-                )
+            if approval.approved_at > now or (
+                approval.expires_at is not None
+                and (approval.expires_at <= approval.approved_at or approval.expires_at <= now)
             ):
                 raise ApprovalInvalid
             return _domain_job_with_snapshot(record, snapshot), snapshot
 
-    def recover_dispatch_identity(
-        self, job_id: str
-    ) -> tuple[SeoJob, ExecutionSnapshot]:
+    def recover_dispatch_identity(self, job_id: str) -> tuple[SeoJob, ExecutionSnapshot]:
         """Revalidate immutable identity for side-effect-free existing-run lookup."""
         with transaction(self._conn):
             record = self._jobs.get_job(self._company_id, job_id)
@@ -322,9 +352,7 @@ class JobService:
             self._paid_approval(record)
             return _domain_job_with_snapshot(record, snapshot), snapshot
 
-    def recover_canceled_dispatch(
-        self, job_id: str
-    ) -> tuple[SeoJob, ExecutionSnapshot]:
+    def recover_canceled_dispatch(self, job_id: str) -> tuple[SeoJob, ExecutionSnapshot]:
         """Revalidate immutable identity for side-effect-free canceled-run lookup."""
         with transaction(self._conn):
             record = self._jobs.get_job(self._company_id, job_id)
@@ -446,9 +474,7 @@ class JobService:
         ):
             raise DataIntegrityError
         try:
-            approval = self._approvals.get_approval(
-                self._company_id, record.job_id, approval_id
-            )
+            approval = self._approvals.get_approval(self._company_id, record.job_id, approval_id)
         except NotFound as exc:
             raise DataIntegrityError from exc
         if (
@@ -561,13 +587,9 @@ class JobService:
                     raise InvalidTransition
                 if not is_transition_allowed(actual_state, target):
                     raise InvalidTransition
-                if not (
-                    actual_state is JobState.DRAFT and target is JobState.VALIDATED
-                ):
+                if not (actual_state is JobState.DRAFT and target is JobState.VALIDATED):
                     _require_plan_integrity(record)
-                    snapshot = self._snapshots.get_snapshot(
-                        self._company_id, record.snapshot_id
-                    )
+                    snapshot = self._snapshots.get_snapshot(self._company_id, record.snapshot_id)
                     _require_job_snapshot_integrity(record, snapshot)
                 transition_time: datetime | None = None
                 approval: ApprovalRecord | None = None
@@ -582,14 +604,11 @@ class JobService:
                     transition_time = _clock_datetime(self._clock())
                     if approval is None:
                         raise DataIntegrityError
-                    if (
-                        approval.approved_at > transition_time
-                        or (
-                            approval.expires_at is not None
-                            and (
-                                approval.expires_at <= approval.approved_at
-                                or approval.expires_at <= transition_time
-                            )
+                    if approval.approved_at > transition_time or (
+                        approval.expires_at is not None
+                        and (
+                            approval.expires_at <= approval.approved_at
+                            or approval.expires_at <= transition_time
                         )
                     ):
                         raise ApprovalInvalid
@@ -613,10 +632,7 @@ class JobService:
                             raise ValueError("error_code must be a non-empty string")
                         stored_error_code = error_code
                     error_summary = reason
-                elif (
-                    actual_state is JobState.FAILED_RETRYABLE
-                    and target is JobState.QUEUED
-                ):
+                elif actual_state is JobState.FAILED_RETRYABLE and target is JobState.QUEUED:
                     stored_error_code = None
                     error_summary = None
                 elif error_code is not None:

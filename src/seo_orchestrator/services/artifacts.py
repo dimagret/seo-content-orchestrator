@@ -124,9 +124,7 @@ _FORBIDDEN_FIELD_SUFFIXES = (
     "setcookie",
     "token",
 )
-_FORBIDDEN_FIELD_SUBSTRINGS = _FORBIDDEN_ARTIFACT_FIELDS | frozenset(
-    {"tokenvalue"}
-)
+_FORBIDDEN_FIELD_SUBSTRINGS = _FORBIDDEN_ARTIFACT_FIELDS | frozenset({"tokenvalue"})
 _SENSITIVE_TEXT_PATTERNS = (
     re.compile(r"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----", re.IGNORECASE),
     re.compile(
@@ -148,7 +146,7 @@ _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _ALTERNATE_IP_COMPONENT = re.compile(r"0x[0-9a-f]+", re.IGNORECASE)
 _STRUCTURED_FIELD_NAME = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _COMPACT_LABEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
-_EMBEDDED_JSON_START = re.compile(r'[\[{\"]')
+_EMBEDDED_JSON_START = re.compile(r"[\[{\"]")
 _CREDENTIAL_LIKE_CORE = (
     r"(?:"
     r"(?:sk|pk|rk|ak)[_-][A-Za-z0-9_-]{8,}"
@@ -304,7 +302,7 @@ def _is_forbidden_field(value: str) -> bool:
 def _reject_raw_json_artifact_text(value: str) -> None:
     candidate = value.strip()
     for _ in range(_MAX_JSON_STRING_WRAPPERS):
-        if len(candidate) < 2 or candidate[0] not in "[{\"":
+        if len(candidate) < 2 or candidate[0] not in '[{"':
             return
         try:
             decoded = json.loads(candidate)
@@ -318,7 +316,7 @@ def _reject_raw_json_artifact_text(value: str) -> None:
             return
         candidate = decoded.strip()
 
-    if len(candidate) < 2 or candidate[0] not in "[{\"":
+    if len(candidate) < 2 or candidate[0] not in '[{"':
         return
     try:
         json.loads(candidate)
@@ -373,6 +371,12 @@ def _reject_forbidden_artifact_fields(value: JsonValue) -> None:
             _reject_forbidden_artifact_fields(nested)
     elif type(value) is str:
         _reject_sensitive_text(value)
+
+
+def validate_artifact_safe_value(value: JsonValue) -> None:
+    """Reject credential, hidden-reasoning, and forbidden fields in JSON data."""
+    canonical_json(value)
+    _reject_forbidden_artifact_fields(value)
 
 
 def _is_alternate_ip_literal(hostname: str) -> bool:
@@ -438,14 +442,17 @@ def _source_provenance(source: JsonValue) -> dict[str, JsonValue]:
     try:
         normalized_fetched_at = _parse_aware_datetime(fetched_at).isoformat()
     except ValueError as exc:
-        raise ValueError(
-            "source fetched_at must be a timezone-aware ISO timestamp"
-        ) from exc
+        raise ValueError("source fetched_at must be a timezone-aware ISO timestamp") from exc
     return {
         "url": url,
         "content_hash": content_hash,
         "fetched_at": normalized_fetched_at,
     }
+
+
+def validate_source_provenance(source: JsonValue) -> dict[str, JsonValue]:
+    """Return one canonical source record after strict artifact-boundary validation."""
+    return _source_provenance(source)
 
 
 def _normalized_source(source: JsonValue) -> JsonValue:
@@ -521,9 +528,7 @@ def _validate_model_usage(value: JsonValue) -> None:
             if field_name not in model:
                 continue
             token_count = model[field_name]
-            if (
-                type(token_count) is not int or token_count < 0
-            ):
+            if type(token_count) is not int or token_count < 0:
                 raise ValueError(f"model_usage {field_name} must be a non-negative integer")
 
 
@@ -586,9 +591,7 @@ def _validate_job_provenance(job: SeoJob) -> None:
         type(job.approved_plan_fingerprint) is not str
         or _SHA256.fullmatch(job.approved_plan_fingerprint) is None
     ):
-        raise ValueError(
-            "approved_plan_fingerprint must be a lowercase SHA-256 digest"
-        )
+        raise ValueError("approved_plan_fingerprint must be a lowercase SHA-256 digest")
     _validate_identifier(job.approval_record_id, "approval_record_id")
     created_at = _aware_datetime(job.created_at, "created_at")
     if job.started_at is None:
@@ -739,14 +742,7 @@ class ArtifactStore:
         self._after_validation = after_validation or (lambda: None)
 
     def _manifest_path_for_job(self, company_id: str, job_id: str) -> Path:
-        return (
-            self._artifact_root
-            / "companies"
-            / company_id
-            / "jobs"
-            / job_id
-            / "manifest.json"
-        )
+        return self._artifact_root / "companies" / company_id / "jobs" / job_id / "manifest.json"
 
     def manifest_path_for_job(self, company_id: str, job_id: str) -> Path:
         """Return the one canonical manifest location for an artifact identity."""
@@ -904,15 +900,11 @@ class ArtifactStore:
         expected_payloads: dict[str, bytes],
         artifact_hashes: dict[str, str],
     ) -> ArtifactManifest:
-        actual_payloads, _, manifest = self._validated_bundle(
-            bundle_fd, job.company_id, job.job_id
-        )
+        actual_payloads, _, manifest = self._validated_bundle(bundle_fd, job.company_id, job.job_id)
         for name, expected_payload in expected_payloads.items():
             if actual_payloads[name] != expected_payload:
                 raise DataIntegrityError
-        expected_manifest = self._manifest_value(
-            job, result, artifact_hashes, manifest.created_at
-        )
+        expected_manifest = self._manifest_value(job, result, artifact_hashes, manifest.created_at)
         if actual_payloads["manifest.json"] != canonical_json(expected_manifest):
             raise DataIntegrityError
         return manifest
@@ -998,10 +990,7 @@ class ArtifactStore:
                 "approval_record_id",
             ):
                 _validate_identifier(manifest_value[field_name], field_name)
-            if (
-                manifest_value["job_id"] != job_id
-                or manifest_value["company_id"] != company_id
-            ):
+            if manifest_value["job_id"] != job_id or manifest_value["company_id"] != company_id:
                 raise ValueError
             for field_name in (
                 "brief_fingerprint",
@@ -1067,9 +1056,7 @@ class ArtifactStore:
             if manifest_value["warnings"] != warnings:
                 raise ValueError
             source_provenance = manifest_value["source_provenance"]
-            if type(source_provenance) is not list or len(source_provenance) != len(
-                sources
-            ):
+            if type(source_provenance) is not list or len(source_provenance) != len(sources):
                 raise ValueError
             for source, provenance in zip(sources, source_provenance, strict=True):
                 expected_provenance = _source_provenance(cast(JsonValue, source))
@@ -1121,9 +1108,7 @@ class ArtifactStore:
                     os.rmdir(name, dir_fd=jobs_fd)
                     os.fsync(jobs_fd)
                 except OSError as cleanup_exc:
-                    exc.add_note(
-                        f"failed to remove unopenable staging directory: {cleanup_exc!r}"
-                    )
+                    exc.add_note(f"failed to remove unopenable staging directory: {cleanup_exc!r}")
                 raise
             return name, descriptor
         raise DataIntegrityError
@@ -1151,8 +1136,7 @@ class ArtifactStore:
         return (
             stat.S_ISDIR(named_stat.st_mode)
             and stat.S_ISDIR(staging_stat.st_mode)
-            and (named_stat.st_dev, named_stat.st_ino)
-            == (staging_stat.st_dev, staging_stat.st_ino)
+            and (named_stat.st_dev, named_stat.st_ino) == (staging_stat.st_dev, staging_stat.st_ino)
         )
 
     @staticmethod
@@ -1210,9 +1194,7 @@ class ArtifactStore:
             finished_at = _aware_datetime(job.finished_at, "finished_at")
             if created_at < finished_at:
                 raise ValueError("artifact clock cannot precede finished_at")
-            manifest_value = self._manifest_value(
-                job, result, artifact_hashes, created_at
-            )
+            manifest_value = self._manifest_value(job, result, artifact_hashes, created_at)
             staged_payloads = dict(payloads)
             staged_payloads["manifest.json"] = canonical_json(manifest_value)
             staging_name, staging_fd = self._create_staging_directory(
@@ -1316,8 +1298,7 @@ class ArtifactStore:
                 os.close(bundle_fd)
         expected_provenance = _expected_job_manifest_provenance(job)
         if any(
-            manifest_value[field_name] != value
-            for field_name, value in expected_provenance.items()
+            manifest_value[field_name] != value for field_name, value in expected_provenance.items()
         ):
             raise DataIntegrityError
         return payloads
@@ -1346,9 +1327,7 @@ class ArtifactStore:
         with self._jobs_directory(company_id, create=False) as jobs_fd:
             bundle_fd = _open_directory_at(jobs_fd, job_id, create=False)
             try:
-                payloads, _, _ = self._validated_bundle(
-                    bundle_fd, company_id, job_id
-                )
+                payloads, _, _ = self._validated_bundle(bundle_fd, company_id, job_id)
             finally:
                 os.close(bundle_fd)
         return cast(BinaryIO, BytesIO(payloads[name]))

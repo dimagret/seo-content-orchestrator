@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import errno
+import json
 import os
 import secrets
 import signal
@@ -11,6 +12,7 @@ import socket
 import stat
 import threading
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from types import FrameType
 from typing import cast
@@ -19,13 +21,31 @@ import uvicorn
 
 from seo_orchestrator.api.app import create_app
 from seo_orchestrator.api.auth import load_api_token, load_hmac_key
-from seo_orchestrator.db.connection import connect
+from seo_orchestrator.canonical import (
+    MAX_CANONICAL_BYTES,
+    JsonValue,
+    canonical_json,
+)
+from seo_orchestrator.db.connection import connect, require_unaliased_absolute_path
 from seo_orchestrator.db.migrations import migrate
 from seo_orchestrator.executors.base import Executor
 from seo_orchestrator.executors.staged_mock import StagedMockExecutor
 from seo_orchestrator.runner import Runner
 from seo_orchestrator.services.artifacts import ArtifactStore
+from seo_orchestrator.services.jobs import JobService
+from seo_orchestrator.services.supervised_subscription import (
+    authoritative_supervised_state_path,
+    prepare_supervised_packet,
+)
 from seo_orchestrator.settings import Settings
+from seo_orchestrator.supervised_rail import (
+    ObservedCompletion,
+    OperatorAttestation,
+    StagePacket,
+    SupervisedRail,
+    SupervisedStatus,
+    packet_identity_mapping,
+)
 
 _WORKER_UID = 10000
 _SOCKET_BIND_UMASK_LOCK = threading.Lock()
@@ -97,10 +117,14 @@ def _remove_owned_socket(
     metadata = _owned_socket_metadata(socket_path, owner_uid)
     if metadata is None:
         return
-    if expected_identity is not None and (
-        metadata.st_dev,
-        metadata.st_ino,
-    ) != expected_identity:
+    if (
+        expected_identity is not None
+        and (
+            metadata.st_dev,
+            metadata.st_ino,
+        )
+        != expected_identity
+    ):
         raise SocketPathError("worker socket target changed before removal")
     if expected_identity is not None and metadata.st_nlink != 1:
         raise SocketPathError("worker socket target has unexpected aliases")
@@ -158,15 +182,11 @@ def _verify_socket_path_references_listener(
                 break
             received.extend(chunk)
         if not secrets.compare_digest(received, challenge):
-            raise SocketPathError(
-                "worker socket path does not reference the bound listener"
-            )
+            raise SocketPathError("worker socket path does not reference the bound listener")
     except SocketPathError:
         raise
     except OSError as exc:
-        raise SocketPathError(
-            "worker socket path does not reference the bound listener"
-        ) from exc
+        raise SocketPathError("worker socket path does not reference the bound listener") from exc
     finally:
         if accepted is not None:
             accepted.close()
@@ -189,9 +209,7 @@ def _bind_unix_socket_with_mode(
             os.umask(previous_umask)
 
 
-def prepare_unix_socket(
-    socket_path: Path, *, owner_uid: int, mode: int
-) -> _OwnedUnixListener:
+def prepare_unix_socket(socket_path: Path, *, owner_uid: int, mode: int) -> _OwnedUnixListener:
     """Bind a fresh AF_UNIX listener without replacing arbitrary filesystem objects."""
     if not isinstance(socket_path, Path) or not socket_path.is_absolute():
         raise SocketPathError("worker socket path must be absolute")
@@ -242,13 +260,15 @@ def prepare_unix_socket(
             )
         elif bound and candidate_identity is not None:
             current = _owned_socket_metadata(socket_path, owner_uid)
-            if current is not None and (
-                current.st_dev,
-                current.st_ino,
-            ) != candidate_identity:
-                raise SocketPathError(
-                    "worker socket target changed before removal"
-                ) from exc
+            if (
+                current is not None
+                and (
+                    current.st_dev,
+                    current.st_ino,
+                )
+                != candidate_identity
+            ):
+                raise SocketPathError("worker socket target changed before removal") from exc
         raise
 
 
@@ -363,11 +383,233 @@ def doctor(settings: Settings, *, owner_uid: int = _WORKER_UID) -> None:
     _validate_socket_parent(settings.socket_path, owner_uid)
 
 
+def _packet_output(packet: StagePacket) -> dict[str, JsonValue]:
+    return {**packet_identity_mapping(packet), "input_hash": packet.input_hash}
+
+
+def _emit_json(value: dict[str, JsonValue]) -> None:
+    print(canonical_json(value).decode("utf-8"))
+
+
+def _unique_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    value: dict[str, object] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("completion JSON contains a duplicate object key")
+        value[key] = item
+    return value
+
+
+def _reject_json_constant(_value: str) -> object:
+    raise ValueError("completion JSON contains a non-finite number")
+
+
+def _private_completion_metadata(metadata: os.stat_result) -> bool:
+    return (
+        stat.S_ISREG(metadata.st_mode)
+        and metadata.st_uid == os.getuid()
+        and stat.S_IMODE(metadata.st_mode) == 0o600
+        and metadata.st_nlink == 1
+        and metadata.st_size <= MAX_CANONICAL_BYTES
+    )
+
+
+def _completion_metadata_signature(metadata: os.stat_result) -> tuple[int, ...]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_uid,
+        stat.S_IMODE(metadata.st_mode),
+        metadata.st_nlink,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
+def _read_private_json(path: Path) -> JsonValue:
+    if (
+        not path.is_absolute()
+        or any(part in {".", ".."} for part in path.parts)
+        or "\x00" in str(path)
+    ):
+        raise ValueError("completion file path must be absolute and normalized")
+    try:
+        require_unaliased_absolute_path(path)
+    except ValueError as exc:
+        raise ValueError("completion file is not a private bounded regular file") from exc
+    try:
+        before = os.lstat(path)
+    except OSError as exc:
+        raise ValueError("completion file is unavailable") from exc
+    if not _private_completion_metadata(before):
+        raise ValueError("completion file is not a private bounded regular file")
+    flags = os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise ValueError("completion file cannot be opened safely") from exc
+    try:
+        opened = os.fstat(descriptor)
+        if not _private_completion_metadata(opened) or _completion_metadata_signature(
+            opened
+        ) != _completion_metadata_signature(before):
+            raise ValueError("completion file changed while opening")
+        payload = bytearray()
+        while len(payload) <= MAX_CANONICAL_BYTES:
+            chunk = os.read(descriptor, min(65_536, MAX_CANONICAL_BYTES + 1 - len(payload)))
+            if not chunk:
+                break
+            payload.extend(chunk)
+        if len(payload) > MAX_CANONICAL_BYTES:
+            raise ValueError("completion file exceeds the maximum JSON size")
+        after = os.fstat(descriptor)
+        if not _private_completion_metadata(after) or _completion_metadata_signature(
+            after
+        ) != _completion_metadata_signature(opened):
+            raise ValueError("completion file changed while reading")
+    finally:
+        os.close(descriptor)
+    try:
+        value = json.loads(
+            payload,
+            object_pairs_hook=_unique_json_object,
+            parse_constant=_reject_json_constant,
+        )
+        normalized = json.loads(canonical_json(cast(JsonValue, value)))
+    except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError, RecursionError) as exc:
+        raise ValueError("completion file is not valid bounded JSON") from exc
+    return cast(JsonValue, normalized)
+
+
+def _read_observed_completion(
+    path: Path,
+    *,
+    attestation: OperatorAttestation,
+) -> ObservedCompletion:
+    value = _read_private_json(path)
+    if type(value) is not dict or set(value) != {
+        "company_id",
+        "job_id",
+        "stage_id",
+        "input_hash",
+        "payload",
+    }:
+        raise ValueError("completion file must be an exact identity-bound envelope")
+    try:
+        return ObservedCompletion(
+            job_id=cast(str, value["job_id"]),
+            company_id=cast(str, value["company_id"]),
+            stage_id=cast(str, value["stage_id"]),
+            input_hash=cast(str, value["input_hash"]),
+            payload=value["payload"],
+            attestation=attestation,
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("completion file identity envelope is invalid") from exc
+
+
+def _supervised_status_output(
+    rail: SupervisedRail,
+    *,
+    company_id: str,
+    job_id: str,
+) -> dict[str, JsonValue]:
+    status = rail.status(company_id=company_id, job_id=job_id)
+    output: dict[str, JsonValue] = {"status": status.value}
+    if status is SupervisedStatus.AWAITING_OPERATOR_EXECUTION:
+        output["packet"] = _packet_output(
+            rail.outstanding_packet(company_id=company_id, job_id=job_id)
+        )
+    elif status is SupervisedStatus.ARTIFACT_FROZEN:
+        binding = rail.artifact_binding(company_id=company_id, job_id=job_id)
+        output["artifact"] = {
+            "manifest_path": binding.manifest_path,
+            "manifest_hash": binding.manifest_hash,
+        }
+    return output
+
+
+def _run_supervised_command(
+    settings: Settings,
+    *,
+    command: str,
+    arguments: argparse.Namespace,
+) -> None:
+    company_id = cast(str, arguments.company_id)
+    job_id = cast(str, arguments.job_id)
+    rail = SupervisedRail(state_path=authoritative_supervised_state_path(settings.db_path))
+
+    if command == "supervised-status":
+        _emit_json(_supervised_status_output(rail, company_id=company_id, job_id=job_id))
+        return
+    if command == "supervised-bind":
+        completion = _read_observed_completion(
+            cast(Path, arguments.completion_file),
+            attestation=OperatorAttestation(
+                session_ref=cast(str, arguments.session_ref),
+                provider_id=cast(str, arguments.provider_id),
+                model_id=cast(str, arguments.model_id),
+                operator_id=cast(str, arguments.operator_id),
+                observed_at=datetime.now(UTC),
+            ),
+        )
+        if completion.company_id != company_id or completion.job_id != job_id:
+            raise ValueError("completion file is outside the requested authority scope")
+        if cast(bool, arguments.resolve_recovery):
+            rail.resolve_recovery_for_exact_binding(
+                company_id=company_id,
+                job_id=job_id,
+                expected_input_hash=completion.input_hash,
+                operator_id=cast(str, arguments.operator_id),
+            )
+        outcome = rail.bind_completion(completion)
+        if isinstance(outcome, StagePacket):
+            _emit_json(_packet_output(outcome))
+        else:
+            _emit_json({"status": outcome.value})
+        return
+    if command != "supervised-packet":
+        raise ValueError("unsupported supervised command")
+
+    connection = connect(settings.db_path)
+    try:
+        packet = prepare_supervised_packet(
+            rail=rail,
+            job_service=JobService(connection, company_id=company_id),
+            job_id=job_id,
+            designated_session_ref=cast(str, arguments.session_ref),
+        )
+        _emit_json(_packet_output(packet))
+    finally:
+        connection.close()
+
+
+def _supervised_parser(
+    subcommands: argparse._SubParsersAction[argparse.ArgumentParser],
+    command: str,
+) -> argparse.ArgumentParser:
+    parser = subcommands.add_parser(command)
+    parser.add_argument("--company-id", required=True)
+    parser.add_argument("--job-id", required=True)
+    return parser
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="seo-orchestrator")
     subcommands = parser.add_subparsers(dest="command", required=True)
     for command in ("migrate", "serve", "doctor"):
         subcommands.add_parser(command)
+    _supervised_parser(subcommands, "supervised-status")
+    supervised_packet = _supervised_parser(subcommands, "supervised-packet")
+    supervised_packet.add_argument("--session-ref", required=True)
+    supervised_bind = _supervised_parser(subcommands, "supervised-bind")
+    supervised_bind.add_argument("--completion-file", required=True, type=Path)
+    supervised_bind.add_argument("--operator-id", required=True)
+    supervised_bind.add_argument("--session-ref", required=True)
+    supervised_bind.add_argument("--provider-id", required=True)
+    supervised_bind.add_argument("--model-id", required=True)
+    supervised_bind.add_argument("--resolve-recovery", action="store_true")
     worker = subcommands.add_parser("worker")
     worker.add_argument(
         "--mock",
@@ -390,6 +632,13 @@ def main(argv: Sequence[str] | None = None) -> None:
         return
     if command == "doctor":
         doctor(settings)
+        return
+    if command in {
+        "supervised-packet",
+        "supervised-status",
+        "supervised-bind",
+    }:
+        _run_supervised_command(settings, command=command, arguments=arguments)
         return
     if not cast(bool, getattr(arguments, "mock", False)):
         raise SystemExit("worker requires explicit executor selection")

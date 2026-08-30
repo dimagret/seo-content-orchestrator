@@ -22,7 +22,7 @@ from seo_orchestrator.domain import (
 )
 from seo_orchestrator.errors import CompanyArchived, DataIntegrityError, NotFound, VersionConflict
 
-_SNAPSHOT_CONTEXT_KEYS = frozenset(
+_SNAPSHOT_CONTEXT_BASE_KEYS = frozenset(
     {
         "schema_version",
         "company",
@@ -148,9 +148,7 @@ class CompanyRepository:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
-    def add_company(
-        self, company_id: str, created_at: datetime, updated_at: datetime
-    ) -> None:
+    def add_company(self, company_id: str, created_at: datetime, updated_at: datetime) -> None:
         self._conn.execute(
             """INSERT INTO companies(company_id, created_at, updated_at)
                VALUES (?, ?, ?)""",
@@ -261,9 +259,7 @@ class CompanyRepository:
             ),
         )
 
-    def get_direction(
-        self, company_id: str, direction_id: str, version: int
-    ) -> BusinessDirection:
+    def get_direction(self, company_id: str, direction_id: str, version: int) -> BusinessDirection:
         row = self._conn.execute(
             """SELECT direction_json
                FROM business_direction_versions
@@ -277,9 +273,7 @@ class CompanyRepository:
         values["updated_at"] = datetime.fromisoformat(values["updated_at"])
         return BusinessDirection.model_validate(values)
 
-    def get_current_direction(
-        self, company_id: str, direction_id: str
-    ) -> BusinessDirection:
+    def get_current_direction(self, company_id: str, direction_id: str) -> BusinessDirection:
         row = self._conn.execute(
             """SELECT direction_json
                FROM business_direction_versions
@@ -385,9 +379,7 @@ class BriefRepository:
             ),
         )
 
-    def get_draft(
-        self, company_id: str, brief_id: str, actor_id: str
-    ) -> BriefDraftRecord:
+    def get_draft(self, company_id: str, brief_id: str, actor_id: str) -> BriefDraftRecord:
         row = self._conn.execute(
             """SELECT brief_id, company_id, company_profile_version, direction_id,
                       direction_version, audience_segment_id, audience_version,
@@ -412,7 +404,6 @@ class BriefRepository:
             created_at=row[10],
             updated_at=row[11],
         )
-
 
     def get_validated_draft(self, company_id: str, brief_id: str) -> BriefDraftRecord:
         row = self._conn.execute(
@@ -583,7 +574,10 @@ class SnapshotRepository:
         except (TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise DataIntegrityError from exc
 
-        if type(context) is not dict or set(context) != _SNAPSHOT_CONTEXT_KEYS:
+        if type(context) is not dict or set(context) not in {
+            _SNAPSHOT_CONTEXT_BASE_KEYS,
+            _SNAPSHOT_CONTEXT_BASE_KEYS | {"evidence"},
+        }:
             raise DataIntegrityError
         company = context.get("company")
         direction = context.get("direction")
@@ -635,10 +629,7 @@ class SnapshotRepository:
                     if type(timestamp) is not str:
                         raise DataIntegrityError
                     parsed_timestamp = datetime.fromisoformat(timestamp)
-                    if (
-                        parsed_timestamp.tzinfo is None
-                        or parsed_timestamp.utcoffset() is None
-                    ):
+                    if parsed_timestamp.tzinfo is None or parsed_timestamp.utcoffset() is None:
                         raise DataIntegrityError
                     model_values[timestamp_field] = parsed_timestamp
                 normalized = model_type.model_validate(model_values).model_dump(mode="json")
@@ -663,9 +654,7 @@ class SnapshotRepository:
             raise NotFound
         return self._hydrate_verified(row)
 
-    def get_snapshot_by_hash(
-        self, company_id: str, snapshot_hash: str
-    ) -> ExecutionSnapshot | None:
+    def get_snapshot_by_hash(self, company_id: str, snapshot_hash: str) -> ExecutionSnapshot | None:
         row = self._conn.execute(
             """SELECT snapshot_id, brief_id, company_id, company_profile_version,
                       direction_id, direction_version, audience_segment_id, audience_version,
@@ -837,9 +826,7 @@ class JobRepository:
         )
         return cursor.rowcount == 1
 
-    def bind_artifact_manifest(
-        self, company_id: str, job_id: str, manifest_path: str
-    ) -> bool:
+    def bind_artifact_manifest(self, company_id: str, job_id: str, manifest_path: str) -> bool:
         """Attach one manifest to one succeeded job without permitting replacement."""
         if type(manifest_path) is not str or not manifest_path:
             raise ValueError("manifest path must be a non-empty string")
@@ -986,9 +973,7 @@ class RunnerRepository:
         )
         return job_cursor.rowcount == 1
 
-    def next_recovery_candidate(
-        self, *, now: str, stale_before: str
-    ) -> RunnerCandidate | None:
+    def next_recovery_candidate(self, *, now: str, stale_before: str) -> RunnerCandidate | None:
         row = self._conn.execute(
             """SELECT job.company_id, job.job_id, job.attempt, job.state
                FROM jobs AS job
@@ -1284,9 +1269,7 @@ class RunnerRepository:
             raise NotFound
         return ExecutionRunRecord(*row)
 
-    def retry_count_for_stage(
-        self, company_id: str, job_id: str, retry_stage_id: str
-    ) -> int:
+    def retry_count_for_stage(self, company_id: str, job_id: str, retry_stage_id: str) -> int:
         row = self._conn.execute(
             """SELECT failure_count
                FROM job_stage_retry_budgets
@@ -1556,9 +1539,7 @@ class RunnerRepository:
         )
         if cursor.rowcount != 1:
             return False
-        self._consume_stage_retry(
-            candidate, retry_stage_id=retry_stage_id, now=now
-        )
+        self._consume_stage_retry(candidate, retry_stage_id=retry_stage_id, now=now)
         return True
 
     def record_poll_status(
@@ -1621,9 +1602,7 @@ class RunnerRepository:
         if cursor.rowcount != 1:
             return False
         if consume_retry:
-            self._consume_stage_retry(
-                candidate, retry_stage_id=retry_stage_id, now=now
-            )
+            self._consume_stage_retry(candidate, retry_stage_id=retry_stage_id, now=now)
         return True
 
     def reconcile_poll_after_local_cancel(
@@ -2255,7 +2234,6 @@ class RunnerRepository:
         if cursor.rowcount != 1:
             raise NotFound
 
-
     def quarantine_queued_job(
         self,
         candidate: RunnerCandidate,
@@ -2367,9 +2345,7 @@ class ApprovalRepository:
         if cursor.rowcount != 1:
             raise NotFound
 
-    def get_approval(
-        self, company_id: str, job_id: str, approval_record_id: str
-    ) -> ApprovalRecord:
+    def get_approval(self, company_id: str, job_id: str, approval_record_id: str) -> ApprovalRecord:
         row = self._conn.execute(
             """SELECT approval.approval_record_id, approval.job_id,
                       approval.approval_type, approval.snapshot_hash,
