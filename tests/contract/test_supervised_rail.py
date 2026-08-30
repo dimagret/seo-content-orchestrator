@@ -1374,3 +1374,156 @@ def test_packet_history_rejects_update_and_delete_tampering(tmp_path: Path) -> N
                 "DELETE FROM supervised_packets WHERE input_hash=?",
                 (packet.input_hash,),
             )
+
+# helpers for terminal-state guard hardening
+
+
+def _reach_final_qa(
+    tmp_path: Path, state_path: Path
+) -> tuple[SeoJob, ExecutionSnapshot, SupervisedRail]:
+    snapshot = _snapshot()
+    job = _job(snapshot)
+    rail = SupervisedRail(state_path=state_path)
+    packet = rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+    while packet.stage_id != "revision":
+        outcome = rail.bind_completion(_completion(packet))
+        assert isinstance(outcome, StagePacket)
+        packet = outcome
+    terminal = rail.bind_completion(_completion(packet))
+    assert terminal is SupervisedStatus.FINAL_QA_READY
+    return job, snapshot, rail
+
+
+def _reach_artifact_frozen(
+    tmp_path: Path, state_path: Path
+) -> tuple[SeoJob, ExecutionSnapshot, SupervisedRail]:
+    job, snapshot, rail = _reach_final_qa(tmp_path, state_path)
+    binding = rail.record_artifact(
+        company_id=job.company_id,
+        job_id=job.job_id,
+        manifest_path=str(tmp_path / "manifest.json"),
+        manifest_hash="a" * 64,
+    )
+    assert binding.manifest_path == str(tmp_path / "manifest.json")
+    assert binding.manifest_hash == "a" * 64
+    return job, snapshot, rail
+
+
+def test_mark_operator_recovery_required_is_rejected_after_final_qa_ready(
+    tmp_path: Path,
+) -> None:
+    state_path = tmp_path / "rail.sqlite"
+    job, _, rail = _reach_final_qa(tmp_path, state_path)
+    assert rail.status(company_id=job.company_id, job_id=job.job_id) is SupervisedStatus.FINAL_QA_READY
+
+    with pytest.raises(ValueError, match="FINAL_QA_READY"):
+        rail.mark_operator_recovery_required(
+            company_id=job.company_id,
+            job_id=job.job_id,
+        )
+
+    reopened = SupervisedRail(state_path=state_path)
+    with pytest.raises(ValueError, match="FINAL_QA_READY"):
+        reopened.mark_operator_recovery_required(
+            company_id=job.company_id,
+            job_id=job.job_id,
+        )
+
+    with sqlite3.connect(state_path) as connection:
+        events = connection.execute(
+            "SELECT event_type FROM supervised_events "
+            "WHERE company_id=? AND job_id=? AND event_type='OPERATOR_RECOVERY_REQUIRED'",
+            (job.company_id, job.job_id),
+        ).fetchall()
+    assert events == []
+
+
+def test_request_cancel_is_rejected_after_final_qa_ready(
+    tmp_path: Path,
+) -> None:
+    state_path = tmp_path / "rail.sqlite"
+    job, _, rail = _reach_final_qa(tmp_path, state_path)
+    assert rail.status(company_id=job.company_id, job_id=job.job_id) is SupervisedStatus.FINAL_QA_READY
+
+    with pytest.raises(ValueError, match="FINAL_QA_READY"):
+        rail.request_cancel(
+            company_id=job.company_id,
+            job_id=job.job_id,
+            operator_id="operator-1",
+        )
+
+    reopened = SupervisedRail(state_path=state_path)
+    with pytest.raises(ValueError, match="FINAL_QA_READY"):
+        reopened.request_cancel(
+            company_id=job.company_id,
+            job_id=job.job_id,
+            operator_id="operator-1",
+        )
+
+    with sqlite3.connect(state_path) as connection:
+        events = connection.execute(
+            "SELECT event_type FROM supervised_events "
+            "WHERE company_id=? AND job_id=? AND event_type='CANCEL_REQUESTED'",
+            (job.company_id, job.job_id),
+        ).fetchall()
+    assert events == []
+
+
+def test_mark_operator_recovery_required_is_rejected_after_artifact_frozen(
+    tmp_path: Path,
+) -> None:
+    state_path = tmp_path / "rail.sqlite"
+    job, _, rail = _reach_artifact_frozen(tmp_path, state_path)
+    assert rail.status(company_id=job.company_id, job_id=job.job_id) is SupervisedStatus.ARTIFACT_FROZEN
+
+    with pytest.raises(ValueError, match="ARTIFACT_FROZEN"):
+        rail.mark_operator_recovery_required(
+            company_id=job.company_id,
+            job_id=job.job_id,
+        )
+
+    reopened = SupervisedRail(state_path=state_path)
+    with pytest.raises(ValueError, match="ARTIFACT_FROZEN"):
+        reopened.mark_operator_recovery_required(
+            company_id=job.company_id,
+            job_id=job.job_id,
+        )
+
+    with sqlite3.connect(state_path) as connection:
+        events = connection.execute(
+            "SELECT event_type FROM supervised_events "
+            "WHERE company_id=? AND job_id=? AND event_type='OPERATOR_RECOVERY_REQUIRED'",
+            (job.company_id, job.job_id),
+        ).fetchall()
+    assert events == []
+
+
+def test_request_cancel_is_rejected_after_artifact_frozen(
+    tmp_path: Path,
+) -> None:
+    state_path = tmp_path / "rail.sqlite"
+    job, _, rail = _reach_artifact_frozen(tmp_path, state_path)
+    assert rail.status(company_id=job.company_id, job_id=job.job_id) is SupervisedStatus.ARTIFACT_FROZEN
+
+    with pytest.raises(ValueError, match="ARTIFACT_FROZEN"):
+        rail.request_cancel(
+            company_id=job.company_id,
+            job_id=job.job_id,
+            operator_id="operator-1",
+        )
+
+    reopened = SupervisedRail(state_path=state_path)
+    with pytest.raises(ValueError, match="ARTIFACT_FROZEN"):
+        reopened.request_cancel(
+            company_id=job.company_id,
+            job_id=job.job_id,
+            operator_id="operator-1",
+        )
+
+    with sqlite3.connect(state_path) as connection:
+        events = connection.execute(
+            "SELECT event_type FROM supervised_events "
+            "WHERE company_id=? AND job_id=? AND event_type='CANCEL_REQUESTED'",
+            (job.company_id, job.job_id),
+        ).fetchall()
+    assert events == []
