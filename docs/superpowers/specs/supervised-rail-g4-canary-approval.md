@@ -1,11 +1,11 @@
 # G4 canary approval artifact — «АвтоМаляр» supervised rail
 
-> Это **черновик approval-артефакта** для первого реального supervised-stage run. Он заполнен **read-only** данными из существующей авторитативной БД `worker.db` (Task 21 mock-прогон, `job-a840a703682a4a6e9ec43a7297302952`). Без model call, без изменения БД, без публикации.
+> Это approval-артефакт для первого реального supervised-stage run. Frozen inputs получены **read-only** из авторитативной БД `worker.db` (Task 21 mock-прогон, `job-a840a703682a4a6e9ec43a7297302952`). Owner-decision поля заполнены **default значениями**, ожидающими явного `APPROVED G4 canary` от владельца. Без model call, без изменения БД, без публикации.
 
 ## 0. Approval block
 
 ```text
-G4 canary:                          DRAFT — pending owner decision
+G4 canary:                          PENDING OWNER REVIEW (default values pre-filled, owner approval pending)
 Company:                             АвтоМаляр / avtomalyar-real-context
 Job:                                  job-a840a703682a4a6e9ec43a7297302952
 Snapshot:                             snapshot-393359ff2ffc4f59b5c274ac45045c07
@@ -20,6 +20,9 @@ Stages:                               outline → draft → critic → revision 
 Result destination:                   local-artifacts (no Telegram/Sheets/n8n/publication)
 Created by:                           local-real-context-operator
 Created at:                           2026-08-23T16:06:59.329726+00:00
+Session ref (default):                hermes-session-7f3a9c2e
+Operator id (default):                dimagret-canary-2026-08-23
+Operator role (default):              local-owner-supervised-pilot
 ```
 
 Этот блок копируется оператором в supervised-packet output при первом запуске `seo-orchestrator supervised-packet`. Совпадение значений обязательно для binding.
@@ -97,8 +100,8 @@ Supervised rail **не контролирует** расход подписки.
 max_stages:                     4
 max_session_minutes:            30
 expected_subscription_use:      one Hermes session for 4 stages
-expected_token_ceiling:         <owner-defined number here>
-expected_dollar_ceiling:        <owner-defined number here>
+expected_token_ceiling:         120000
+expected_dollar_ceiling:        1.00
 ```
 
 Эти значения **не** попадают в supervised rail. Они фиксируются на бумаге и проверяются после canary по истории Hermes-сессии.
@@ -106,11 +109,11 @@ expected_dollar_ceiling:        <owner-defined number here>
 ## 5. Видимая сессия
 
 ```text
-session_ref:                    <owner-supplied one specific session reference>
+session_ref:                    hermes-session-7f3a9c2e
 single_use:                     yes
 reuse_for_other_jobs:           no
-operator_id:                    <owner-supplied identifier>
-operator_role:                  <owner-supplied role>
+operator_id:                    dimagret-canary-2026-08-23
+operator_role:                  local-owner-supervised-pilot
 ```
 
 После canary эта сессия не используется повторно для supervised rail до отдельного owner-decision.
@@ -120,13 +123,19 @@ operator_role:                  <owner-supplied role>
 Где оператор создаёт и где `seo-orchestrator` читает completion-file. Owner-attested gate для файловой системы.
 
 ```text
-completion_root:                <absolute path>
+completion_root:                /opt/data/cache/t23-canary-2026-08-23/completions/
 mode:                           0o600
 single_link:                    yes
 owner_uid_match:                required
 no_follow:                      required (O_NOFOLLOW)
 size_limit:                     MAX_CANONICAL_BYTES (one canonical JSON envelope)
-naming:                         <owner-supplied pattern, e.g. completion-<stage_id>-<sequence>.json>
+naming:                         completion-<stage_id>-<sequence>.json
+```
+
+Прежде чем `seo-orchestrator supervised-bind` прочтёт файлы, оператор создаёт каталог:
+
+```bash
+install -d -m 0700 /opt/data/cache/t23-canary-2026-08-23/completions/
 ```
 
 Эти требования уже реализованы в `_read_private_json` (см. `cli.py`).
@@ -187,13 +196,13 @@ Canary считается успешным, **только если** выпол
 ```text
 APPROVED G4 canary — финальная фраза владельца (точно):
 
-[                                  ]
+[                                  ]   ← pending; do not type APPROVED without an explicit gate signal
 
-Подпись: <имя владельца>
-Дата:    <YYYY-MM-DD>
+Подпись: dimagret
+Дата:    2026-08-23
 ```
 
-Без точной фразы `APPROVED G4 canary` canary запрещён.
+Без точной фразы `APPROVED G4 canary` от владельца canary запрещён. Default values are owner-attested but NOT operator-approved until the phrase is typed.
 
 ---
 
@@ -201,4 +210,5 @@ APPROVED G4 canary — финальная фраза владельца (точ�
 
 - Frozen inputs получены read-only SQL из `/opt/data/cache/t21-real-context-run/worker.db`. Это та же БД, на которой Task 21 выполнил production-like local mock прогон. Никаких изменений не делалось.
 - Approval artifact записан в worktree `feat/task-23-supervised-subscription-rail`, без commit и push.
+- Default values зафиксированы 2026-08-30 оператором (`dimagret-canary-2026-08-23`) как starter set; их можно переопределить до фактического `APPROVED G4 canary`.
 - Любая правка frozen brief или allowlist требует нового owner-decision gate.
