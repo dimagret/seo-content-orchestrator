@@ -6,6 +6,7 @@ import json
 import os
 import sqlite3
 import threading
+from argparse import Namespace
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
@@ -1125,3 +1126,26 @@ def test_supervised_cli_runs_complete_offline_lifecycle(
 
     cli.main(["supervised-status", *shared])
     assert _captured_cli_json(capsys) == {"status": "FINAL_QA_READY"}
+
+
+
+def test_supervised_finalize_cli_freezes_artifact(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    settings, flow, connection, service, store, rail = _prepared_final_qa(tmp_path)
+    try:
+        cli._run_supervised_command(
+            settings,
+            command="supervised-finalize",
+            arguments=Namespace(company_id=flow.company_id, job_id=flow.job_id),
+        )
+        output = _captured_cli_json(capsys)
+        assert output["status"] == "ARTIFACT_FROZEN"
+        manifest = output["manifest"]
+        assert manifest["company_id"] == flow.company_id
+        assert manifest["job_id"] == flow.job_id
+        assert service.get_job(flow.job_id).state is JobState.SUCCEEDED
+        assert rail.status(company_id=flow.company_id, job_id=flow.job_id).value == "ARTIFACT_FROZEN"
+        assert store.manifest_path_for_job(flow.company_id, flow.job_id).is_file()
+    finally:
+        connection.close()
