@@ -5,7 +5,7 @@
 ## Предусловия
 
 ```text
-- в worktree feat/task-23-supervised-subscription-rail HEAD = 0139c27;
+- в worktree находится проверенный актуальный commit supervised rail;
 - локальный pytest/ruff/mypy зелёные;
 - Hermes CLI готов к работе (у оператора);
 - operator_id известен (например, "operator-auto");
@@ -17,7 +17,7 @@
 ```bash
 seo-orchestrator \
   supervised-packet \
-  --company-id avtomalyar \
+  --company-id avtomalyar-real-context \
   --job-id <JOB_ID> \
   --session-ref <VISIBLE_HERMES_SESSION_REF>
 ```
@@ -46,7 +46,7 @@ prompt
 
 ```json
 {
-  "company_id": "avtomalyar",
+  "company_id": "avtomalyar-real-context",
   "job_id": "<JOB_ID>",
   "stage_id": "outline",
   "input_hash": "<input_hash from step 1>",
@@ -65,7 +65,8 @@ prompt
 Оператор сохраняет bounded envelope в файл `0o600`, single-link, в каталоге, доступном только ему.
 
 ```bash
-install -m 0600 /dev/null /tmp/completion-outline.json
+install -d -m 0700 /opt/data/cache/t23-canary-2026-08-23/completions/
+install -m 0600 /dev/null /opt/data/cache/t23-canary-2026-08-23/completions/completion-outline-1.json
 # записать bounded envelope в файл (например через tee)
 ```
 
@@ -74,9 +75,9 @@ install -m 0600 /dev/null /tmp/completion-outline.json
 ```bash
 seo-orchestrator \
   supervised-bind \
-  --company-id avtomalyar \
+  --company-id avtomalyar-real-context \
   --job-id <JOB_ID> \
-  --completion-file /tmp/completion-outline.json \
+  --completion-file /opt/data/cache/t23-canary-2026-08-23/completions/completion-outline-1.json \
   --operator-id operator-auto \
   --session-ref <VISIBLE_HERMES_SESSION_REF> \
   --provider-id openai-codex \
@@ -99,7 +100,16 @@ seo-orchestrator \
 
 ## Шаг 6. Finalize
 
-Этот шаг **не** требует оператора и **не** отправляет данные во внешние системы. Локальная функция `SupervisedSubscriptionFinalizer.finalize(job_id)`:
+Этот шаг выполняется оператором явной локальной CLI-командой. Команда **не** отправляет данные во внешние системы:
+
+```bash
+seo-orchestrator \
+  supervised-finalize \
+  --company-id avtomalyar-real-context \
+  --job-id <JOB_ID>
+```
+
+Внутри вызывается существующая функция `SupervisedSubscriptionFinalizer.finalize(job_id)`:
 
 1. проверяет, что rail в `FINAL_QA_READY`;
 2. делает `JobService.transition RUNNING → SUCCEEDED` (через scoped JobService);

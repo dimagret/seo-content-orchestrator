@@ -34,6 +34,7 @@ from seo_orchestrator.runner import Runner
 from seo_orchestrator.services.artifacts import ArtifactStore
 from seo_orchestrator.services.jobs import JobService
 from seo_orchestrator.services.supervised_subscription import (
+    SupervisedSubscriptionFinalizer,
     authoritative_supervised_state_path,
     prepare_supervised_packet,
 )
@@ -569,6 +570,37 @@ def _run_supervised_command(
         else:
             _emit_json({"status": outcome.value})
         return
+    if command == "supervised-finalize":
+        connection = connect(settings.db_path)
+        try:
+            artifact_store = ArtifactStore(settings.artifact_root)
+            jobs = JobService(
+                connection,
+                company_id=company_id,
+                artifact_store=artifact_store,
+            )
+            finalizer = SupervisedSubscriptionFinalizer(
+                rail=rail,
+                job_service=jobs,
+                artifact_store=artifact_store,
+            )
+            manifest = finalizer.finalize(job_id)
+            manifest_output: dict[str, JsonValue] = {
+                "job_id": manifest.job_id,
+                "company_id": manifest.company_id,
+                "snapshot_hash": manifest.snapshot_hash,
+                "artifact_hashes": dict(manifest.artifact_hashes),
+                "created_at": manifest.created_at.isoformat(),
+            }
+            _emit_json(
+                {
+                    "status": SupervisedStatus.ARTIFACT_FROZEN.value,
+                    "manifest": manifest_output,
+                }
+            )
+        finally:
+            connection.close()
+        return
     if command != "supervised-packet":
         raise ValueError("unsupported supervised command")
 
@@ -610,6 +642,7 @@ def _parser() -> argparse.ArgumentParser:
     supervised_bind.add_argument("--provider-id", required=True)
     supervised_bind.add_argument("--model-id", required=True)
     supervised_bind.add_argument("--resolve-recovery", action="store_true")
+    _supervised_parser(subcommands, "supervised-finalize")
     worker = subcommands.add_parser("worker")
     worker.add_argument(
         "--mock",
@@ -637,6 +670,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         "supervised-packet",
         "supervised-status",
         "supervised-bind",
+        "supervised-finalize",
     }:
         _run_supervised_command(settings, command=command, arguments=arguments)
         return

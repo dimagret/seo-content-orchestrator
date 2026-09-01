@@ -62,6 +62,22 @@ def test_completion_file_boundary_is_private_strict_and_no_follow(tmp_path: Path
         cli._read_private_json(duplicate_path)
 
 
+def test_supervised_finalize_parser_requires_company_and_job() -> None:
+    arguments = cli._parser().parse_args(
+        [
+            "supervised-finalize",
+            "--company-id",
+            "avtomalyar-real-context",
+            "--job-id",
+            "job-1",
+        ]
+    )
+
+    assert arguments.command == "supervised-finalize"
+    assert arguments.company_id == "avtomalyar-real-context"
+    assert arguments.job_id == "job-1"
+
+
 def test_completion_file_boundary_rejects_hardlink(tmp_path: Path) -> None:
     completion_path = tmp_path / "completion.json"
     completion_path.write_bytes(canonical_json({"outline": ["bounded"]}))
@@ -128,6 +144,7 @@ def test_supervised_cli_allowlist_contains_no_execution_command() -> None:
     allowed = {
         "supervised-packet": ["--session-ref", "session-1"],
         "supervised-status": [],
+        "supervised-finalize": [],
         "supervised-bind": [
             "--completion-file",
             "/private/completion.json",

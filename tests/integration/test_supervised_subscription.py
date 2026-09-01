@@ -6,6 +6,7 @@ import json
 import os
 import sqlite3
 import threading
+from argparse import Namespace
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
@@ -34,6 +35,7 @@ from seo_orchestrator.supervised_rail import (
     OperatorAttestation,
     StagePacket,
     SupervisedRail,
+    SupervisedRuntimeIdentity,
     SupervisedStatus,
 )
 from tests.e2e.support import (
@@ -46,6 +48,11 @@ from tests.e2e.support import (
 )
 
 EVIDENCE_FETCHED_AT = datetime(2026, 8, 27, 9, 0, tzinfo=UTC)
+RUNTIME_IDENTITY = SupervisedRuntimeIdentity(
+    provider_id="minimax-oauth",
+    model_id="MiniMax-M3",
+)
+
 EVIDENCE_SOURCE: dict[str, JsonValue] = {
     "url": "https://example.test/evidence",
     "content_hash": "e" * 64,
@@ -202,8 +209,8 @@ def _complete_four_stages(
 def _prepared_final_qa(
     tmp_path: Path,
     *,
-    model_ids: tuple[str, ...] = ("gpt-5.6-terra",),
-    provider_ids: tuple[str, ...] = ("openai-codex",),
+    model_ids: tuple[str, ...] = ("MiniMax-M3",),
+    provider_ids: tuple[str, ...] = ("minimax-oauth",),
     maximum_retries: int = 0,
     revision_payload: JsonValue | None = None,
     revision_payload_factory: Callable[[str], JsonValue] | None = None,
@@ -262,6 +269,8 @@ def _prepared_final_qa(
     first_packet = rail.prepare_packet(
         job,
         snapshot,
+            runtime_identity=RUNTIME_IDENTITY,
+
         designated_session_ref="local-session-designated",
     )
     _complete_four_stages(
@@ -345,8 +354,8 @@ def test_finalizer_freezes_one_manifest_and_replays_after_restart(tmp_path: Path
         fixture,
         pipeline_version="supervised-subscription-v1",
         executor_name="supervised-subscription",
-        model_ids=("gpt-5.6-terra",),
-        provider_ids=("openai-codex",),
+        model_ids=("MiniMax-M3",),
+        provider_ids=("minimax-oauth",),
         maximum_retries=0,
         evidence_sources=(EVIDENCE_SOURCE,),
     )
@@ -384,6 +393,8 @@ def test_finalizer_freezes_one_manifest_and_replays_after_restart(tmp_path: Path
         first_packet = rail.prepare_packet(
             job,
             snapshot,
+            runtime_identity=RUNTIME_IDENTITY,
+
             designated_session_ref="local-session-designated",
         )
         _complete_four_stages(
@@ -445,9 +456,9 @@ def test_finalizer_freezes_one_manifest_and_replays_after_restart(tmp_path: Path
             "models": [
                 {
                     "input_tokens": 0,
-                    "model_id": "gpt-5.6-terra",
+                    "model_id": "MiniMax-M3",
                     "output_tokens": 0,
-                    "provider_id": "openai-codex",
+                    "provider_id": "minimax-oauth",
                 }
             ]
         }
@@ -636,9 +647,9 @@ def test_finalizer_rejects_failed_keyword_or_evidence_qa_without_side_effects(
 @pytest.mark.parametrize(
     ("model_ids", "provider_ids", "maximum_retries"),
     [
-        (("wrong-model",), ("openai-codex",), 0),
-        (("gpt-5.6-terra",), ("wrong-provider",), 0),
-        (("gpt-5.6-terra",), ("openai-codex",), 1),
+        ((), ("minimax-oauth",), 0),
+        (("MiniMax-M3", "MiniMax-M3"), ("minimax-oauth",), 0),
+        (("MiniMax-M3",), ("minimax-oauth",), 1),
     ],
 )
 def test_finalizer_rejects_non_supervised_approved_plan_before_transition(
@@ -699,8 +710,8 @@ def test_revision_binding_rejects_credential_text_before_success_or_artifact(
         fixture,
         pipeline_version="supervised-subscription-v1",
         executor_name="supervised-subscription",
-        model_ids=("gpt-5.6-terra",),
-        provider_ids=("openai-codex",),
+        model_ids=("MiniMax-M3",),
+        provider_ids=("minimax-oauth",),
         maximum_retries=0,
         evidence_sources=(EVIDENCE_SOURCE,),
     )
@@ -787,8 +798,8 @@ def test_prepare_supervised_packet_starts_once_and_replays_same_packet(
         fixture,
         pipeline_version="supervised-subscription-v1",
         executor_name="supervised-subscription",
-        model_ids=("gpt-5.6-terra",),
-        provider_ids=("openai-codex",),
+        model_ids=("MiniMax-M3",),
+        provider_ids=("minimax-oauth",),
         maximum_retries=0,
         evidence_sources=(EVIDENCE_SOURCE,),
     )
@@ -831,8 +842,8 @@ def test_prepare_supervised_packet_rejects_non_authoritative_rail_before_transit
         fixture,
         pipeline_version="supervised-subscription-v1",
         executor_name="supervised-subscription",
-        model_ids=("gpt-5.6-terra",),
-        provider_ids=("openai-codex",),
+        model_ids=("MiniMax-M3",),
+        provider_ids=("minimax-oauth",),
         maximum_retries=0,
         evidence_sources=(EVIDENCE_SOURCE,),
     )
@@ -869,8 +880,8 @@ def test_prepare_supervised_packet_rejects_invalid_evidence_before_transition(
         fixture,
         pipeline_version="supervised-subscription-v1",
         executor_name="supervised-subscription",
-        model_ids=("gpt-5.6-terra",),
-        provider_ids=("openai-codex",),
+        model_ids=("MiniMax-M3",),
+        provider_ids=("minimax-oauth",),
         maximum_retries=0,
         evidence_sources=(),
     )
@@ -1038,8 +1049,8 @@ def test_supervised_cli_runs_complete_offline_lifecycle(
         fixture,
         pipeline_version="supervised-subscription-v1",
         executor_name="supervised-subscription",
-        model_ids=("gpt-5.6-terra",),
-        provider_ids=("openai-codex",),
+        model_ids=("MiniMax-M3",),
+        provider_ids=("minimax-oauth",),
         maximum_retries=0,
         evidence_sources=(EVIDENCE_SOURCE,),
     )
@@ -1071,8 +1082,8 @@ def test_supervised_cli_runs_complete_offline_lifecycle(
     )
     output = _captured_cli_json(capsys)
     assert output["stage_id"] == "outline"
-    assert output["provider_id"] == "openai-codex"
-    assert output["model_id"] == "gpt-5.6-terra"
+    assert output["provider_id"] == "minimax-oauth"
+    assert output["model_id"] == "MiniMax-M3"
     packet_value = output
     prompt = packet_value.get("prompt")
     assert type(prompt) is str
@@ -1111,9 +1122,9 @@ def test_supervised_cli_runs_complete_offline_lifecycle(
                 "--session-ref",
                 "visible-session-designated",
                 "--provider-id",
-                "openai-codex",
+                "minimax-oauth",
                 "--model-id",
-                "gpt-5.6-terra",
+                "MiniMax-M3",
             ]
         )
         output = _captured_cli_json(capsys)
@@ -1125,3 +1136,26 @@ def test_supervised_cli_runs_complete_offline_lifecycle(
 
     cli.main(["supervised-status", *shared])
     assert _captured_cli_json(capsys) == {"status": "FINAL_QA_READY"}
+
+
+
+def test_supervised_finalize_cli_freezes_artifact(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    settings, flow, connection, service, store, rail = _prepared_final_qa(tmp_path)
+    try:
+        cli._run_supervised_command(
+            settings,
+            command="supervised-finalize",
+            arguments=Namespace(company_id=flow.company_id, job_id=flow.job_id),
+        )
+        output = _captured_cli_json(capsys)
+        assert output["status"] == "ARTIFACT_FROZEN"
+        manifest = output["manifest"]
+        assert manifest["company_id"] == flow.company_id
+        assert manifest["job_id"] == flow.job_id
+        assert service.get_job(flow.job_id).state is JobState.SUCCEEDED
+        assert rail.status(company_id=flow.company_id, job_id=flow.job_id).value == "ARTIFACT_FROZEN"
+        assert store.manifest_path_for_job(flow.company_id, flow.job_id).is_file()
+    finally:
+        connection.close()
