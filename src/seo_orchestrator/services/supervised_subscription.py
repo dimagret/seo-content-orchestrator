@@ -21,12 +21,11 @@ from seo_orchestrator.services.jobs import (
     verified_authoritative_database_path,
 )
 from seo_orchestrator.supervised_rail import (
-    SUPERVISED_MODEL_ID,
     SUPERVISED_PIPELINE_VERSION,
-    SUPERVISED_PROVIDER_ID,
     FrozenRunBinding,
     StagePacket,
     SupervisedRail,
+    SupervisedRuntimeIdentity,
     build_stage_packet,
 )
 
@@ -131,13 +130,17 @@ def _validate_content_citations(content: str, source_count: int) -> None:
             raise ValueError("each non-heading content block must carry a source citation")
 
 
-def _validate_plan(job_service: JobService, job_id: str) -> None:
+def _validate_plan(job_service: JobService, job_id: str) -> SupervisedRuntimeIdentity:
     plan = job_service.execution_plan(job_id)
     if (
         plan.pipeline_version != SUPERVISED_PIPELINE_VERSION
         or plan.executor_name != _SUPERVISED_EXECUTOR
-        or plan.model_ids != (SUPERVISED_MODEL_ID,)
-        or plan.provider_ids != (SUPERVISED_PROVIDER_ID,)
+        or len(plan.model_ids) != 1
+        or not isinstance(plan.model_ids[0], str)
+        or not plan.model_ids[0].strip()
+        or len(plan.provider_ids) != 1
+        or not isinstance(plan.provider_ids[0], str)
+        or not plan.provider_ids[0].strip()
         or plan.maximum_retries != 0
         or plan.cost_currency is not None
         or plan.cost_min_decimal is not None
@@ -146,6 +149,10 @@ def _validate_plan(job_service: JobService, job_id: str) -> None:
         or plan.result_destination != _RESULT_DESTINATION
     ):
         raise ValueError("approved execution plan is not the supervised subscription plan")
+    return SupervisedRuntimeIdentity(
+        provider_id=plan.provider_ids[0],
+        model_id=plan.model_ids[0],
+    )
 
 
 def _validate_binding(job: SeoJob, binding: FrozenRunBinding) -> None:
@@ -159,7 +166,11 @@ def _validate_binding(job: SeoJob, binding: FrozenRunBinding) -> None:
         raise ValueError("supervised rail binding does not match the authoritative job")
 
 
-def _execution_result(payload: JsonValue, context_value: JsonValue) -> ExecutionResult:
+def _execution_result(
+    payload: JsonValue,
+    context_value: JsonValue,
+    runtime_identity: SupervisedRuntimeIdentity,
+) -> ExecutionResult:
     payload_mapping = _mapping(payload, "revision payload")
     if set(payload_mapping) != _REVISION_FIELDS:
         raise ValueError("revision payload must contain exactly the frozen result fields")
@@ -206,8 +217,8 @@ def _execution_result(payload: JsonValue, context_value: JsonValue) -> Execution
         model_usage={
             "models": [
                 {
-                    "model_id": SUPERVISED_MODEL_ID,
-                    "provider_id": SUPERVISED_PROVIDER_ID,
+                    "model_id": runtime_identity.model_id,
+                    "provider_id": runtime_identity.provider_id,
                     "input_tokens": 0,
                     "output_tokens": 0,
                 }
@@ -242,7 +253,7 @@ def prepare_supervised_packet(
 
     _require_authoritative_rail(rail, job_service)
     job = job_service.get_job(job_id)
-    _validate_plan(job_service, job_id)
+    runtime_identity = _validate_plan(job_service, job_id)
     if job.state is JobState.QUEUED:
         try:
             queued_job, queued_snapshot = job_service.prepare_execution(job_id)
@@ -252,6 +263,7 @@ def prepare_supervised_packet(
                 stage_id="outline",
                 sequence=0,
                 designated_session_ref=designated_session_ref,
+                runtime_identity=runtime_identity,
             )
             job = job_service.transition(
                 job_id,
@@ -271,11 +283,13 @@ def prepare_supervised_packet(
         stage_id="outline",
         sequence=0,
         designated_session_ref=designated_session_ref,
+        runtime_identity=runtime_identity,
     )
     return rail.prepare_packet(
         job,
         snapshot,
         designated_session_ref=designated_session_ref,
+        runtime_identity=runtime_identity,
     )
 
 
@@ -305,7 +319,7 @@ class SupervisedSubscriptionFinalizer:
             raise ValueError("job_id must be a non-empty string")
         _require_authoritative_rail(self._rail, self._jobs)
         job = self._jobs.get_job(job_id)
-        _validate_plan(self._jobs, job_id)
+        runtime_identity = _validate_plan(self._jobs, job_id)
         binding = self._rail.frozen_binding(
             company_id=job.company_id,
             job_id=job.job_id,
@@ -321,6 +335,7 @@ class SupervisedSubscriptionFinalizer:
                 company_id=job.company_id,
                 job_id=job.job_id,
             ),
+            runtime_identity=runtime_identity,
         )
 
         if job.state is JobState.RUNNING:

@@ -21,12 +21,17 @@ from seo_orchestrator.supervised_rail import (
     OperatorAttestation,
     StagePacket,
     SupervisedRail,
+    SupervisedRuntimeIdentity,
     SupervisedStatus,
     build_stage_packet,
     packet_identity_mapping,
 )
 
 NOW = datetime(2026, 8, 23, 12, 0, tzinfo=UTC)
+RUNTIME_IDENTITY = SupervisedRuntimeIdentity(
+    provider_id="minimax-oauth",
+    model_id="MiniMax-M3",
+)
 EVIDENCE_SOURCE: dict[str, JsonValue] = {
     "url": "https://example.test/evidence",
     "content_hash": "e" * 64,
@@ -114,7 +119,7 @@ def test_integrity_key_replacement_and_hardlink_fail_closed(tmp_path: Path) -> N
     job = _job(snapshot)
     state_path = tmp_path / "private" / "supervised.sqlite"
     rail = SupervisedRail(state_path=state_path)
-    rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+    rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
     key_path = state_path.with_name(f".{state_path.name}.integrity-key")
     key_alias = state_path.parent / "integrity-key-alias"
     os.link(key_path, key_alias)
@@ -180,6 +185,7 @@ def test_packet_is_identical_for_the_same_frozen_job_and_stage() -> None:
         snapshot,
         stage_id="outline",
         sequence=0,
+        runtime_identity=RUNTIME_IDENTITY,
         designated_session_ref="session-1",
     )
     packet_two = build_stage_packet(
@@ -187,13 +193,14 @@ def test_packet_is_identical_for_the_same_frozen_job_and_stage() -> None:
         snapshot,
         stage_id="outline",
         sequence=0,
+        runtime_identity=RUNTIME_IDENTITY,
         designated_session_ref="session-1",
     )
 
     assert packet_one == packet_two
     assert packet_one.input_hash == sha256_fingerprint(packet_identity_mapping(packet_one))
-    assert packet_one.provider_id == "openai-codex"
-    assert packet_one.model_id == "gpt-5.6-terra"
+    assert packet_one.provider_id == "minimax-oauth"
+    assert packet_one.model_id == "MiniMax-M3"
 
 
 def test_packet_exposes_separate_frozen_evidence_commitment() -> None:
@@ -224,6 +231,7 @@ def test_packet_exposes_separate_frozen_evidence_commitment() -> None:
         snapshot,
         stage_id="outline",
         sequence=0,
+        runtime_identity=RUNTIME_IDENTITY,
         designated_session_ref="session-1",
     )
 
@@ -241,6 +249,7 @@ def test_packet_rejects_unsupported_stage_and_mismatched_snapshot() -> None:
             snapshot,
             stage_id="publish",
             sequence=0,
+        runtime_identity=RUNTIME_IDENTITY,
             designated_session_ref="session-1",
         )
     with pytest.raises(ValueError, match="frozen snapshot"):
@@ -249,6 +258,7 @@ def test_packet_rejects_unsupported_stage_and_mismatched_snapshot() -> None:
             snapshot.model_copy(update={"snapshot_id": "snapshot-2"}),
             stage_id="outline",
             sequence=0,
+        runtime_identity=RUNTIME_IDENTITY,
             designated_session_ref="session-1",
         )
 
@@ -263,6 +273,7 @@ def test_packet_rejects_missing_approval_binding() -> None:
             snapshot,
             stage_id="outline",
             sequence=0,
+        runtime_identity=RUNTIME_IDENTITY,
             designated_session_ref="session-1",
         )
 
@@ -271,8 +282,8 @@ def test_observed_completion_rejects_malformed_attestation() -> None:
     with pytest.raises(ValueError, match="session_ref"):
         OperatorAttestation(
             session_ref=" ",
-            provider_id="openai-codex",
-            model_id="gpt-5.6-terra",
+            provider_id="minimax-oauth",
+            model_id="MiniMax-M3",
             operator_id="operator-1",
             observed_at=NOW,
         )
@@ -286,8 +297,8 @@ def test_observed_completion_rejects_malformed_attestation() -> None:
             payload={"outline": "ok"},
             attestation=OperatorAttestation(
                 session_ref="session-1",
-                provider_id="openai-codex",
-                model_id="gpt-5.6-terra",
+                provider_id="minimax-oauth",
+                model_id="MiniMax-M3",
                 operator_id="operator-1",
                 observed_at=NOW,
             ),
@@ -302,7 +313,7 @@ def test_private_ledger_recovers_the_same_outstanding_packet_after_reopen(
     state_path = tmp_path / "supervised.sqlite"
 
     first_packet = SupervisedRail(state_path=state_path).prepare_packet(
-        job, snapshot, designated_session_ref="session-1"
+        job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1"
     )
     reopened = SupervisedRail(state_path=state_path)
 
@@ -349,8 +360,8 @@ def _completion(
         payload=payload if payload is not None else _valid_stage_payload(packet.stage_id),
         attestation=OperatorAttestation(
             session_ref=session_ref,
-            provider_id="openai-codex",
-            model_id="gpt-5.6-terra",
+            provider_id="minimax-oauth",
+            model_id="MiniMax-M3",
             operator_id="operator-1",
             observed_at=NOW,
         ),
@@ -366,6 +377,9 @@ def test_completion_requires_designated_session_and_frozen_provider_model(
     packet = rail.prepare_packet(
         job,
         snapshot,
+
+        runtime_identity=RUNTIME_IDENTITY,
+
         designated_session_ref="visible-session-designated",
     )
 
@@ -388,17 +402,17 @@ def test_completion_requires_designated_session_and_frozen_provider_model(
     for candidate in (
         completion(
             session_ref="visible-session-wrong",
-            provider_id="openai-codex",
-            model_id="gpt-5.6-terra",
+            provider_id="minimax-oauth",
+            model_id="MiniMax-M3",
         ),
         completion(
             session_ref="visible-session-designated",
             provider_id="wrong-provider",
-            model_id="gpt-5.6-terra",
+            model_id="MiniMax-M3",
         ),
         completion(
             session_ref="visible-session-designated",
-            provider_id="openai-codex",
+            provider_id="minimax-oauth",
             model_id="wrong-model",
         ),
     ):
@@ -408,8 +422,8 @@ def test_completion_requires_designated_session_and_frozen_provider_model(
     accepted = rail.bind_completion(
         completion(
             session_ref="visible-session-designated",
-            provider_id="openai-codex",
-            model_id="gpt-5.6-terra",
+            provider_id="minimax-oauth",
+            model_id="MiniMax-M3",
         )
     )
     assert isinstance(accepted, StagePacket)
@@ -419,7 +433,7 @@ def test_rail_rejects_second_completion_for_the_same_packet(tmp_path: Path) -> N
     snapshot = _snapshot()
     job = _job(snapshot)
     rail = SupervisedRail(state_path=tmp_path / "rail.sqlite")
-    packet = rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+    packet = rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
 
     accepted = rail.bind_completion(_completion(packet))
 
@@ -442,7 +456,7 @@ def test_next_packet_identity_commits_accepted_stage_payload(tmp_path: Path) -> 
     )
     for name, payload in variants:
         rail = SupervisedRail(state_path=tmp_path / name / "rail.sqlite")
-        outline = rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+        outline = rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
         draft = rail.bind_completion(_completion(outline, payload=payload))
         assert isinstance(draft, StagePacket)
         packets.append(draft)
@@ -483,7 +497,7 @@ def test_every_preceding_completion_changes_next_packet_after_restart(
     for name, payload in (("first", first_payload), ("second", second_payload)):
         state_path = tmp_path / name / "rail.sqlite"
         rail = SupervisedRail(state_path=state_path)
-        packet = rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+        packet = rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
         while packet.stage_id != stage_id:
             outcome = rail.bind_completion(_completion(packet))
             assert isinstance(outcome, StagePacket)
@@ -528,7 +542,7 @@ def test_malformed_stage_payload_cannot_be_persisted_or_advance(
     job = _job(snapshot)
     state_path = tmp_path / stage_id / "rail.sqlite"
     rail = SupervisedRail(state_path=state_path)
-    packet = rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+    packet = rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
     while packet.stage_id != stage_id:
         outcome = rail.bind_completion(_completion(packet))
         assert isinstance(outcome, StagePacket)
@@ -552,7 +566,7 @@ def test_revision_source_is_validated_against_frozen_evidence_before_persistence
     snapshot = _snapshot()
     job = _job(snapshot)
     rail = SupervisedRail(state_path=state_path)
-    packet = rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+    packet = rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
     while packet.stage_id != "revision":
         outcome = rail.bind_completion(_completion(packet))
         assert isinstance(outcome, StagePacket)
@@ -583,7 +597,7 @@ def test_rejected_completion_has_durable_payload_free_state_evidence(tmp_path: P
     snapshot = _snapshot()
     job = _job(snapshot)
     rail = SupervisedRail(state_path=state_path)
-    packet = rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+    packet = rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
     secret_text = "api_key=abcdef123456"
 
     with pytest.raises(ValueError, match="credential"):
@@ -640,7 +654,7 @@ def test_sensitive_stage_payload_cannot_be_persisted_or_advance(
     snapshot = _snapshot()
     job = _job(snapshot)
     rail = SupervisedRail(state_path=tmp_path / "rail.sqlite")
-    packet = rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+    packet = rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
     while packet.stage_id != stage_id:
         outcome = rail.bind_completion(_completion(packet))
         assert isinstance(outcome, StagePacket)
@@ -675,7 +689,7 @@ def test_binding_rejects_cross_company_completion_without_writing(tmp_path: Path
     job = _job(snapshot)
     state_path = tmp_path / "rail.sqlite"
     rail = SupervisedRail(state_path=state_path)
-    packet = rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+    packet = rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
     completion = replace(_completion(packet), company_id="company-2")
 
     with pytest.raises(LookupError, match="not found"):
@@ -691,7 +705,7 @@ def test_accepted_completion_stores_its_canonical_commitment(tmp_path: Path) -> 
     job = _job(snapshot)
     state_path = tmp_path / "rail.sqlite"
     rail = SupervisedRail(state_path=state_path)
-    packet = rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+    packet = rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
     rail.bind_completion(_completion(packet))
 
     with sqlite3.connect(state_path) as connection:
@@ -711,7 +725,7 @@ def test_ledger_events_are_append_only_and_cover_packet_binding(tmp_path: Path) 
     job = _job(snapshot)
     state_path = tmp_path / "rail.sqlite"
     rail = SupervisedRail(state_path=state_path)
-    packet = rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+    packet = rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
     rail.bind_completion(_completion(packet))
 
     with sqlite3.connect(state_path) as connection:
@@ -737,7 +751,7 @@ def test_accepted_completion_rejects_update_and_delete_tampering(tmp_path: Path)
     job = _job(snapshot)
     state_path = tmp_path / "rail.sqlite"
     rail = SupervisedRail(state_path=state_path)
-    packet = rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+    packet = rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
     rail.bind_completion(_completion(packet))
 
     with sqlite3.connect(state_path) as connection:
@@ -758,7 +772,7 @@ def test_completion_advances_only_through_fixed_four_stage_order(tmp_path: Path)
     job = _job(snapshot)
     state_path = tmp_path / "rail.sqlite"
     rail = SupervisedRail(state_path=state_path)
-    packet = rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+    packet = rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
 
     for sequence, expected_stage in enumerate(("draft", "critic", "revision"), start=1):
         outcome = rail.bind_completion(_completion(packet))
@@ -774,7 +788,7 @@ def test_completion_advances_only_through_fixed_four_stage_order(tmp_path: Path)
     with pytest.raises(LookupError, match="no outstanding packet"):
         rail.outstanding_packet(company_id=job.company_id, job_id=job.job_id)
     with pytest.raises(ValueError, match="FINAL_QA_READY"):
-        rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+        rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
 
     with sqlite3.connect(state_path) as connection:
         counts = connection.execute(
@@ -796,7 +810,7 @@ def test_authenticated_completion_binding_blocks_materialized_row_replacement(
     job = _job(snapshot)
     state_path = tmp_path / "rail.sqlite"
     rail = SupervisedRail(state_path=state_path)
-    packet = rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+    packet = rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
     while packet.stage_id != "revision":
         outcome = rail.bind_completion(_completion(packet))
         assert isinstance(outcome, StagePacket)
@@ -849,7 +863,7 @@ def test_authenticated_packet_binding_blocks_materialized_row_replacement(tmp_pa
     job = _job(snapshot)
     state_path = tmp_path / "rail.sqlite"
     rail = SupervisedRail(state_path=state_path)
-    packet = rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+    packet = rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
     with sqlite3.connect(state_path) as connection:
         connection.execute("DROP TRIGGER supervised_packets_no_update")
         connection.execute(
@@ -866,7 +880,7 @@ def test_authenticated_context_binding_blocks_materialized_row_replacement(tmp_p
     job = _job(snapshot)
     state_path = tmp_path / "rail.sqlite"
     rail = SupervisedRail(state_path=state_path)
-    rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+    rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
     altered_context: JsonValue = {"brief": {"goal": "altered"}, "evidence": {"sources": []}}
     with sqlite3.connect(state_path) as connection:
         connection.execute("DROP TRIGGER supervised_jobs_binding_no_update")
@@ -890,7 +904,7 @@ def test_authenticated_artifact_binding_blocks_projection_replacement(tmp_path: 
     job = _job(snapshot)
     state_path = tmp_path / "rail.sqlite"
     rail = SupervisedRail(state_path=state_path)
-    packet = rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+    packet = rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
     for _ in range(4):
         outcome = rail.bind_completion(_completion(packet))
         if isinstance(outcome, StagePacket):
@@ -920,7 +934,7 @@ def test_unknown_operator_execution_blocks_prepare_and_bind_after_restart(
     job = _job(snapshot)
     state_path = tmp_path / "rail.sqlite"
     rail = SupervisedRail(state_path=state_path)
-    packet = rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+    packet = rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
 
     status = rail.mark_operator_recovery_required(
         company_id=job.company_id,
@@ -931,7 +945,7 @@ def test_unknown_operator_execution_blocks_prepare_and_bind_after_restart(
     assert status is SupervisedStatus.OPERATOR_RECOVERY_REQUIRED
     assert reopened.status(company_id=job.company_id, job_id=job.job_id) is status
     with pytest.raises(ValueError, match="OPERATOR_RECOVERY_REQUIRED"):
-        reopened.prepare_packet(job, snapshot, designated_session_ref="session-1")
+        reopened.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
     with pytest.raises(ValueError, match="OPERATOR_RECOVERY_REQUIRED"):
         reopened.bind_completion(_completion(packet))
     with pytest.raises(LookupError, match="no outstanding packet"):
@@ -947,7 +961,7 @@ def test_status_projection_cannot_bypass_recovery_or_cancel_by_direct_update(
     job = _job(snapshot)
     state_path = tmp_path / "rail.sqlite"
     rail = SupervisedRail(state_path=state_path)
-    packet = rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+    packet = rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
     if blocked_state == "recovery":
         rail.mark_operator_recovery_required(company_id=job.company_id, job_id=job.job_id)
     else:
@@ -982,7 +996,7 @@ def test_forged_event_append_cannot_reopen_recovery_or_cancel(
     job = _job(snapshot)
     state_path = tmp_path / "rail.sqlite"
     rail = SupervisedRail(state_path=state_path)
-    packet = rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+    packet = rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
     if blocked_state == "recovery":
         rail.mark_operator_recovery_required(company_id=job.company_id, job_id=job.job_id)
     else:
@@ -1067,7 +1081,7 @@ def test_operator_recovery_can_resolve_for_exact_original_completion(
     job = _job(snapshot)
     state_path = tmp_path / "rail.sqlite"
     rail = SupervisedRail(state_path=state_path)
-    packet = rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+    packet = rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
     rail.mark_operator_recovery_required(company_id=job.company_id, job_id=job.job_id)
     reopened = SupervisedRail(state_path=state_path)
 
@@ -1127,7 +1141,7 @@ def test_recovery_replay_rejects_self_consistent_semantic_event_tamper(
     job = _job(snapshot)
     state_path = tmp_path / "rail.sqlite"
     rail = SupervisedRail(state_path=state_path)
-    packet = rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+    packet = rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
     rail.mark_operator_recovery_required(company_id=job.company_id, job_id=job.job_id)
     rail.resolve_recovery_for_exact_binding(
         company_id=job.company_id,
@@ -1167,7 +1181,7 @@ def test_operator_recovery_can_be_resolved_by_explicit_local_cancel(
     job = _job(snapshot)
     state_path = tmp_path / "rail.sqlite"
     rail = SupervisedRail(state_path=state_path)
-    rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+    rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
     rail.mark_operator_recovery_required(
         company_id=job.company_id,
         job_id=job.job_id,
@@ -1182,7 +1196,7 @@ def test_operator_recovery_can_be_resolved_by_explicit_local_cancel(
     assert status is SupervisedStatus.CANCEL_REQUESTED
     assert rail.status(company_id=job.company_id, job_id=job.job_id) is status
     with pytest.raises(ValueError, match="CANCEL_REQUESTED"):
-        rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+        rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
     with sqlite3.connect(state_path) as connection:
         events = [
             row[0]
@@ -1202,7 +1216,7 @@ def test_cancel_request_is_local_persisted_and_never_claims_upstream_cancellatio
     job = _job(snapshot)
     state_path = tmp_path / "rail.sqlite"
     rail = SupervisedRail(state_path=state_path)
-    packet = rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+    packet = rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
 
     status = rail.request_cancel(
         company_id=job.company_id,
@@ -1223,7 +1237,7 @@ def test_cancel_request_is_local_persisted_and_never_claims_upstream_cancellatio
         is status
     )
     with pytest.raises(ValueError, match="CANCEL_REQUESTED"):
-        reopened.prepare_packet(job, snapshot, designated_session_ref="session-1")
+        reopened.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
     with pytest.raises(ValueError, match="CANCEL_REQUESTED"):
         reopened.bind_completion(_completion(packet))
     with pytest.raises(LookupError, match="no outstanding packet"):
@@ -1245,7 +1259,7 @@ def test_packet_and_completion_advance_roll_back_together_on_head_failure(
     job = _job(snapshot)
     state_path = tmp_path / "rail.sqlite"
     rail = SupervisedRail(state_path=state_path)
-    outline = rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+    outline = rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
     with sqlite3.connect(state_path) as connection:
         connection.execute(
             "CREATE TRIGGER injected_head_failure "
@@ -1273,7 +1287,7 @@ def test_mutable_packet_head_must_reference_next_immutable_packet(tmp_path: Path
     job = _job(snapshot)
     state_path = tmp_path / "rail.sqlite"
     rail = SupervisedRail(state_path=state_path)
-    outline = rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+    outline = rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
 
     with (
         sqlite3.connect(state_path) as connection,
@@ -1305,7 +1319,7 @@ def test_artifact_pointer_is_write_once_in_sqlite(tmp_path: Path) -> None:
     job = _job(snapshot)
     state_path = tmp_path / "rail.sqlite"
     rail = SupervisedRail(state_path=state_path)
-    packet = rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+    packet = rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
     for _ in range(4):
         outcome = rail.bind_completion(_completion(packet))
         if isinstance(outcome, StagePacket):
@@ -1338,7 +1352,7 @@ def test_frozen_job_binding_rejects_direct_update_and_delete(tmp_path: Path) -> 
     job = _job(snapshot)
     state_path = tmp_path / "rail.sqlite"
     SupervisedRail(state_path=state_path).prepare_packet(
-        job, snapshot, designated_session_ref="session-1"
+        job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1"
     )
 
     with sqlite3.connect(state_path) as connection:
@@ -1360,7 +1374,7 @@ def test_packet_history_rejects_update_and_delete_tampering(tmp_path: Path) -> N
     job = _job(snapshot)
     state_path = tmp_path / "rail.sqlite"
     packet = SupervisedRail(state_path=state_path).prepare_packet(
-        job, snapshot, designated_session_ref="session-1"
+        job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1"
     )
 
     with sqlite3.connect(state_path) as connection:
@@ -1384,7 +1398,7 @@ def _reach_final_qa(
     snapshot = _snapshot()
     job = _job(snapshot)
     rail = SupervisedRail(state_path=state_path)
-    packet = rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+    packet = rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
     while packet.stage_id != "revision":
         outcome = rail.bind_completion(_completion(packet))
         assert isinstance(outcome, StagePacket)
@@ -1544,8 +1558,8 @@ def _completion_custom_attestation(
         payload=_valid_stage_payload(packet.stage_id),
         attestation=OperatorAttestation(
             session_ref="session-1",
-            provider_id="openai-codex",
-            model_id="gpt-5.6-terra",
+            provider_id="minimax-oauth",
+            model_id="MiniMax-M3",
             operator_id=operator_id,
             observed_at=observed_at,
         ),
@@ -1559,7 +1573,7 @@ def test_bind_completion_rejects_empty_operator_id(
     job = _job(snapshot)
     state_path = tmp_path / "rail.sqlite"
     rail = SupervisedRail(state_path=state_path)
-    packet = rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+    packet = rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
 
     with pytest.raises(ValueError, match="operator_id"):
         _completion_custom_attestation(packet, operator_id=" ", observed_at=NOW)
@@ -1587,7 +1601,7 @@ def test_bind_completion_rejects_future_observed_at(
     job = _job(snapshot)
     state_path = tmp_path / "rail.sqlite"
     rail = SupervisedRail(state_path=state_path)
-    packet = rail.prepare_packet(job, snapshot, designated_session_ref="session-1")
+    packet = rail.prepare_packet(job, snapshot, runtime_identity=RUNTIME_IDENTITY, designated_session_ref="session-1")
 
     future_attestation = datetime.now(UTC) + timedelta(days=1)
     candidate = _completion_custom_attestation(

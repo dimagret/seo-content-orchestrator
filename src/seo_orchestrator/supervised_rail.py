@@ -25,8 +25,6 @@ from seo_orchestrator.services.artifacts import (
 
 SUPERVISED_PIPELINE_VERSION = "supervised-subscription-v1"
 STAGE_IDS = ("outline", "draft", "critic", "revision")
-SUPERVISED_PROVIDER_ID = "openai-codex"
-SUPERVISED_MODEL_ID = "gpt-5.6-terra"
 _LOWER_HEX = frozenset("0123456789abcdef")
 _MAX_STAGE_LIST_ITEMS = 128
 _MAX_STAGE_COMPACT_TEXT_BYTES = 4096
@@ -65,6 +63,18 @@ def _aware(value: object, field_name: str) -> datetime:
     if type(value) is not datetime or value.tzinfo is None or value.utcoffset() is None:
         raise ValueError(f"{field_name} must be a timezone-aware datetime")
     return value.astimezone(UTC)
+
+
+@dataclass(frozen=True, slots=True)
+class SupervisedRuntimeIdentity:
+    """Exact provider/model pair frozen by the approved execution plan."""
+
+    provider_id: str
+    model_id: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "provider_id", _non_empty(self.provider_id, "provider_id"))
+        object.__setattr__(self, "model_id", _non_empty(self.model_id, "model_id"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -366,6 +376,7 @@ def build_stage_packet(
     stage_id: str,
     sequence: int,
     designated_session_ref: str,
+    runtime_identity: SupervisedRuntimeIdentity,
 ) -> StagePacket:
     """Build one deterministic packet without contacting Hermes or a provider."""
     _validate_frozen_job_binding(job, snapshot)
@@ -373,6 +384,8 @@ def build_stage_packet(
         raise ValueError("stage_id is not supported")
     if type(sequence) is not int or sequence < 0:
         raise ValueError("sequence must be a non-negative integer")
+    if not isinstance(runtime_identity, SupervisedRuntimeIdentity):
+        raise TypeError("runtime_identity must be a SupervisedRuntimeIdentity")
     designated_session_ref = _non_empty(designated_session_ref, "designated_session_ref")
     context = snapshot.thawed_compiled_context()
     if type(context) is not dict:
@@ -393,8 +406,8 @@ def build_stage_packet(
         "approved_plan_fingerprint": approved_plan_fingerprint,
         "snapshot_hash": snapshot.snapshot_hash,
         "evidence_hash": evidence_hash,
-        "provider_id": SUPERVISED_PROVIDER_ID,
-        "model_id": SUPERVISED_MODEL_ID,
+        "provider_id": runtime_identity.provider_id,
+        "model_id": runtime_identity.model_id,
         "designated_session_ref": designated_session_ref,
         "prompt_template_version": SUPERVISED_PIPELINE_VERSION,
         "previous_completion_hash": None,
@@ -410,8 +423,8 @@ def build_stage_packet(
         approved_plan_fingerprint=approved_plan_fingerprint,
         snapshot_hash=snapshot.snapshot_hash,
         evidence_hash=evidence_hash,
-        provider_id=SUPERVISED_PROVIDER_ID,
-        model_id=SUPERVISED_MODEL_ID,
+        provider_id=runtime_identity.provider_id,
+        model_id=runtime_identity.model_id,
         designated_session_ref=designated_session_ref,
         prompt_template_version=SUPERVISED_PIPELINE_VERSION,
         previous_completion_hash=None,
@@ -1652,6 +1665,7 @@ class SupervisedRail:
         snapshot: ExecutionSnapshot,
         *,
         designated_session_ref: str,
+        runtime_identity: SupervisedRuntimeIdentity,
     ) -> StagePacket:
         packet = build_stage_packet(
             job,
@@ -1659,6 +1673,7 @@ class SupervisedRail:
             stage_id="outline",
             sequence=0,
             designated_session_ref=designated_session_ref,
+            runtime_identity=runtime_identity,
         )
         encoded_packet = canonical_json(_packet_value(packet)).decode("utf-8")
         context = snapshot.thawed_compiled_context()
